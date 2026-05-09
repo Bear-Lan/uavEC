@@ -1,0 +1,45 @@
+server:
+  port: 8080
+
+spring:
+  main:
+    allow-bean-definition-overriding: true
+  datasource:
+    url: jdbc:mysql://localhost:3306/scheduler_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    username: root
+    password: "123456"
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.MySQLDialect
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      database: 0
+  
+# Application specific config
+app:
+  scheduler:
+    algorithm: greedy # Support 'greedy' and 'wfq'
+    node-count: 3
+    offload:
+      partial-threshold-mb: 200.0  # 触发部分卸载的数据量阈值
+      partial-edge-ratio: 0.3      # 部分卸载时边缘处理比例 (0.0-1.0)
+      cloud-cpu-cores: 64.0        # 云端服务器核心数（用于估算云端执行时间）
+      cloud-bandwidth-mbps: 50.0   # 到云端的传输带宽 MB/s
+      wan-latency-ms: 50.0         # 广域网往返延迟（毫秒）
+      cloud-queue-penalty-ms: 2000 # 云端排队惩罚（毫秒）
+      distance-delay-ms-per-unit: 5.0  # 每单位距离的传输延迟（毫秒），替代简单的 distance*10
+    simulation:
+      base-drain-rate: 0.2
+      compute-drain-multiplier: 0.8
+      move-speed: 2.0
+      rth-speed: 3.0
+      rth-threshold: 15.0
+      charge-rate: 10.0

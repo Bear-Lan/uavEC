@@ -1,0 +1,275 @@
+/* ================================================================
+   EDG-AXIS Design System — Cyberpunk Dark Theme
+   ================================================================ */
+
+@import url('https://fonts.loli.net/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+:root {
+  /* Typography */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
+
+  /* Core palette */
+  --color-bg-primary: #0d1117;
+  --color-bg-secondary: #06080a;
+  --color-bg-tertiary: #0a0e14;
+  --color-bg-card: rgba(13, 17, 23, 0.85);
+
+  --color-border: #30363d;
+  --color-border-muted: #21262d;
+
+  --color-text-primary: #c9d1d9;
+  --color-text-muted: #8b949e;
+
+  --color-accent: #00ffcc;
+  --color-accent-dim: rgba(0, 255, 204, 0.15);
+  --color-accent-glow: rgba(0, 255, 204, 0.4);
+
+  --color-danger: #ff4949;
+  --color-warning: #e6a23c;
+  --color-success: #13ce66;
+  --color-info: #3b82f6;
+
+  /* Shadows & FX */
+  --shadow-card: 0 0 20px rgba(0, 255, 204, 0.06);
+  --shadow-glow-accent: 0 0 12px var(--color-accent-glow);
+
+  font-family: var(--font-sans);
+  line-height: 1.5;
+  font-weight: 400;
+  color-scheme: dark;
+  color: var(--color-text-primary);
+  background-color: var(--color-bg-primary);
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ======================== Base reset ======================== */
+
+* {
+  box-sizing: border-box;
+}
+
+a {
+  font-weight: 500;
+  color: var(--color-accent);
+  text-decoration: inherit;
+}
+a:hover {
+  color: #33ffd6;
+  text-shadow: 0 0 8px var(--color-accent-dim);
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  font-size: 14px;
+  letter-spacing: 0.3px;
+  background-color: var(--color-bg-primary);
+}
+
+#app {
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  text-align: left;
+}
+
+/* ======================== Cyber Card ======================== */
+.cyber-card {
+  background: var(--color-bg-card) !important;
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--color-border) !important;
+  border-radius: 8px !important;
+  box-shadow: var(--shadow-card);
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+.cyber-card:hover {
+  border-color: rgba(0, 255, 204, 0.2) !important;
+  box-shadow: 0 0 25px rgba(0, 255, 204, 0.08);
+}
+
+/* ======================== Cyber Header ======================== */
+.cyber-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.cyber-title {
+  color: var(--color-accent);
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  font-family: var(--font-mono);
+  text-shadow: 0 0 10px var(--color-accent-dim);
+}
+
+/* ======================== Cyber Button ======================== */
+.cyber-btn {
+  position: relative;
+  font-family: var(--font-mono) !important;
+  font-weight: 600 !important;
+  letter-spacing: 1px !important;
+  text-transform: uppercase;
+  overflow: hidden;
+  transition: all 0.3s ease !important;
+}
+.cyber-btn::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -60%;
+  width: 20%;
+  height: 200%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent);
+  transform: skewX(-25deg);
+  transition: left 0.5s ease;
+}
+.cyber-btn:hover::after {
+  left: 120%;
+}
+
+/* ======================== Cyber Form ======================== */
+.cyber-form .el-form-item__label {
+  color: var(--color-text-muted) !important;
+  font-size: 12px !important;
+  font-family: var(--font-mono);
+}
+.cyber-form .el-input__wrapper,
+.cyber-form .el-select__wrapper,
+.cyber-form .el-input-number {
+  background-color: rgba(0, 0, 0, 0.3) !important;
+  border-color: var(--color-border) !important;
+  box-shadow: none !important;
+}
+.cyber-form .el-input__inner {
+  color: var(--color-text-primary) !important;
+  font-family: var(--font-mono);
+}
+
+/* ======================== Cyber UAV Node Card ======================== */
+.cyber-uav-card {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 15px;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+.cyber-uav-card:hover {
+  border-color: var(--color-accent);
+  box-shadow: var(--shadow-glow-accent);
+}
+.cyber-uav-card.offline {
+  border-color: var(--color-danger);
+  opacity: 0.6;
+}
+
+.node-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.node-header h3 {
+  margin: 0;
+  font-size: 14px;
+  font-family: var(--font-mono);
+  color: var(--color-accent);
+}
+
+.node-stats .stat-item {
+  margin-bottom: 10px;
+}
+.node-stats .label {
+  font-size: 10px;
+  color: var(--color-text-muted);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  font-family: var(--font-mono);
+}
+.node-stats .detail {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin-top: 3px;
+  font-family: var(--font-mono);
+}
+.node-stats .value {
+  font-size: 18px;
+  font-weight: bold;
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+}
+.node-stats .value-small {
+  font-size: 13px;
+  color: var(--color-text-primary);
+  font-family: var(--font-mono);
+}
+
+.inline-stats {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+/* ======================== Scrollbar ======================== */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #484f58;
+}
+
+/* ======================== Utility ======================== */
+.w-full { width: 100%; }
+.mt-2 { margin-top: 10px; }
+.mt-3 { margin-top: 15px; }
+.mt-4 { margin-top: 20px; }
+
+/* ======================== Scanline FX ======================== */
+.radar-scan {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 255, 204, 0.015) 2px,
+    rgba(0, 255, 204, 0.015) 4px
+  );
+  z-index: 5;
+}
+
+/* ======================== Server Blink FX ======================== */
+.server-blink {
+  animation: serverBlink 1.5s infinite ease-in-out;
+}
+@keyframes serverBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; }
+}
+
+/* ======================== Element Plus Dark Theme Overrides ======================== */
+.el-card {
+  --el-card-bg-color: transparent;
+}
+.el-card__header {
+  border-bottom: 1px solid var(--color-border) !important;
+  padding: 14px 20px !important;
+}
