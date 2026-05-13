@@ -13,6 +13,9 @@
                <el-tooltip class="box-item" effect="dark" content="强制下线一台在线无人机模拟失效" placement="top">
                   <el-button type="danger" size="small" @click="simulateFault" :disabled="!activeNodesCount" plain>⚡ 测试故障转移</el-button>
                </el-tooltip>
+               <el-tooltip class="box-item" effect="dark" content="恢复一台已下线的无人机" placement="top">
+                  <el-button type="success" size="small" @click="restoreNode" :disabled="!offlineNodesCount" plain>🔄 恢复节点</el-button>
+               </el-tooltip>
                <el-button type="success" size="small" @click="addDrone" :loading="addingDrone" plain style="margin-left: 10px">+ 部署新站</el-button>
              </div>
           </div>
@@ -144,6 +147,7 @@ const upgradeForm = ref({
 })
 
 const activeNodesCount = computed(() => appStore.nodes.filter(n => n.online).length)
+const offlineNodesCount = computed(() => appStore.nodes.filter(n => !n.online).length)
 
 const healthStatus = computed(() => {
     const total = appStore.nodes.length
@@ -203,6 +207,19 @@ const simulateFault = async () => {
        ElMessage.success(`已强制脱机: ${target.name}。相关任务已被重定向进容错队列。`)
    } catch {
        ElMessage.error('注入故障指令失败')
+   }
+}
+
+const restoreNode = async () => {
+   const offlineNodes = appStore.nodes.filter(n => !n.online)
+   if (offlineNodes.length === 0) return
+   const target = offlineNodes[Math.floor(Math.random() * offlineNodes.length)]
+   if (!target) return
+   try {
+       await api.setNodeStatus(target.id, true)
+       ElMessage.success(`已恢复节点: ${target.name}`)
+   } catch {
+       ElMessage.error('恢复节点失败')
    }
 }
 
