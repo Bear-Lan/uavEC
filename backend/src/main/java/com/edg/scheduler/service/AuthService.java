@@ -71,10 +71,10 @@ public class AuthService {
     public Map<String, Object> login(String username, String password) {
         Operator operator = operatorRepository.findByUsername(username).orElse(null);
         if (operator == null || !passwordEncoder.matches(password, operator.getPassword())) {
-            throw new IllegalArgumentException("Invalid username or password");
+            throw new IllegalArgumentException("账号或密码错误！");
         }
         if (!operator.isEnabled()) {
-            throw new IllegalStateException("Account has been disabled");
+            throw new IllegalStateException("账号已被禁用！");
         }
 
         String token = java.util.UUID.randomUUID().toString();
