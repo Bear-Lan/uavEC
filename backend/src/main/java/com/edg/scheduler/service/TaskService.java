@@ -386,6 +386,10 @@ public class TaskService {
      */
     @Transactional
     public void requeueAllActiveTasks() {
+        // 清空待处理队列，防止上一轮残留任务污染后续算法测试
+        org.redisson.api.RDeque<TaskInfo> queue = redissonClient.getDeque(TASK_QUEUE_KEY);
+        queue.clear();
+
         RMap<String, TaskInfo> activeMap = redissonClient.getMap("task:active");
         if (activeMap.isEmpty())
             return;

@@ -7,7 +7,7 @@
                 <span class="cyber-title" style="margin-right: 15px">多维效能基准分析 / MULTI-DIMENSIONAL BENCHMARK</span>
                 <el-tag type="info" effect="dark" size="small">Data Sync: {{ appStore.performanceStats.history.length }} 批次记录</el-tag>
              </div>
-             
+
              <div style="display: flex; align-items: center; gap: 12px;">
                  <el-radio-group v-model="currentMetric" size="small" @change="renderChart">
                    <el-radio-button label="latency">调度延迟</el-radio-button>
@@ -94,7 +94,7 @@ const downloadCsv = async () => {
 const initChart = () => {
   if (!chartRef.value) return
   chart = echarts.init(chartRef.value, 'dark')
-  
+
   const option = {
     backgroundColor: 'transparent',
     tooltip: {
@@ -102,7 +102,7 @@ const initChart = () => {
       backgroundColor: 'rgba(13, 17, 23, 0.95)',
       borderColor: '#30363d',
       textStyle: { color: '#c9d1d9', fontSize: 11 },
-      axisPointer: { type: 'shadow' },
+      axisPointer: { type: 'line' },
       formatter: (params: any) => {
         if (!params || params.length === 0) return ''
         const idx = params[0].dataIndex
@@ -146,9 +146,9 @@ const initChart = () => {
       axisLabel: { color: '#8b949e', fontSize: 10 }
     },
     series: [
-      { name: 'Greedy', type: 'bar', data: [], barGap: '10%', itemStyle: { color: '#f85149', borderRadius: [3, 3, 0, 0] } },
-      { name: 'WFQ',    type: 'bar', data: [], itemStyle: { color: '#d29922', borderRadius: [3, 3, 0, 0] } },
-      { name: 'Geo',    type: 'bar', data: [], itemStyle: { color: '#3fb950', borderRadius: [3, 3, 0, 0] } }
+      { name: 'Greedy', type: 'line', data: [], smooth: true, itemStyle: { color: '#f85149' }, lineStyle: { width: 2 } },
+      { name: 'WFQ',    type: 'line', data: [], smooth: true, itemStyle: { color: '#d29922' }, lineStyle: { width: 2 } },
+      { name: 'Geo',    type: 'line', data: [], smooth: true, itemStyle: { color: '#3fb950' }, lineStyle: { width: 2 } }
     ]
   }
   chart.setOption(option)
@@ -159,15 +159,14 @@ const renderChart = () => {
     const metricsConfig: Record<string, { key: string, name: string }> = {
         'latency': { key: 'latency', name: '延迟 (ms)' },
         'energy': { key: 'energy', name: '总能耗 (J)' },
-        'bandwidth': { key: 'bandwidth', name: '表观带宽耗' },
+        'bandwidth': { key: 'bandwidth', name: '带宽消耗' },
         'success': { key: 'success', name: '成功率 (%)' }
     }
     const conf = metricsConfig[currentMetric.value]
-    
-    // 从 Pinia 状态树中读取数据
+
     const hist = appStore.performanceStats.history
     const xData = hist.map((h: any) => h.batch)
-    
+
     chart.setOption({
         yAxis: { name: conf?.name },
         xAxis: { data: xData },
@@ -266,13 +265,58 @@ watch(() => appStore.performanceStats.history, () => {
 }, { deep: true })
 
 onMounted(() => {
+    // 加载历史指标数据
+    loadMetricsHistory()
     setTimeout(() => {
         initChart()
         renderChart()
     }, 100) // 延迟确保 DOM 容器已完全渲染展开
-    
+
     window.addEventListener('resize', handleResize)
 })
+
+const loadMetricsHistory = async () => {
+    try {
+        const resp = await api.getMetricsHistory()
+        console.log('>>> metrics history response:', resp.data)
+
+        if (resp.data && Array.isArray(resp.data) && resp.data.length > 0) {
+            // 按 batchId 分组（ABC测试保存为 BATCH-timestamp-alg，单算法保存为 BATCH-timestamp）
+            const grouped: Record<string, any> = {}
+            resp.data.forEach((item: any) => {
+                const alg = item.algorithm || 'unknown'
+                // ABC测试: batchId = BATCH-timestamp-alg, 单算法: batchId = BATCH-timestamp
+                // 尝试提取基础batchId
+                const baseBatchId = item.batchId?.replace(/-greedy$|-wfq$|-geo$/, '') || item.batchId
+                if (!grouped[baseBatchId]) {
+                    grouped[baseBatchId] = {
+                        batch: baseBatchId,
+                        meta: { taskCount: item.taskCount || 0, type: item.type || 'batch', cpu: 0, memory: 0, dataSize: 0 },
+                        latency: { greedy: null, wfq: null, geo: null },
+                        energy: { greedy: null, wfq: null, geo: null },
+                        bandwidth: { greedy: null, wfq: null, geo: null },
+                        success: { greedy: null, wfq: null, geo: null }
+                    }
+                }
+                // 映射到对应算法
+                const keyMap: Record<string, string> = { greedy: 'greedy', wfq: 'wfq', geo: 'geo', unknown: alg }
+                const targetKey = keyMap[alg] || alg
+                if (grouped[baseBatchId].latency[targetKey] !== undefined) {
+                    grouped[baseBatchId].latency[targetKey] = item.latency
+                    grouped[baseBatchId].energy[targetKey] = item.energy
+                    grouped[baseBatchId].bandwidth[targetKey] = item.bandwidth
+                    grouped[baseBatchId].success[targetKey] = item.successRate
+                }
+            })
+            appStore.performanceStats.history = Object.values(grouped)
+        } else {
+            appStore.performanceStats.history = []
+        }
+    } catch (e) {
+        console.error('Failed to load metrics history', e)
+        appStore.performanceStats.history = []
+    }
+}
 
 const handleResize = () => {
   chart?.resize()
