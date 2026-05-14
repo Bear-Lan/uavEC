@@ -18,6 +18,20 @@ import java.util.ArrayList;
 import org.redisson.api.RedissonClient;
 import org.redisson.api.RMap;
 
+/**
+ * 任务服务层
+ *
+ * 核心职责：
+ * - 任务提交与队列管理（基于 Redisson 的分布式优先级队列）
+ * - 定时任务调度处理
+ * - 节点故障时的任务恢复与迁移
+ * - 工作窃取（Work Stealing）机制实现
+ *
+ * 队列策略：
+ * - 高优先级任务（priority >= 4）插入队首，实现"插队"效果
+ * - 普通任务追加至队尾
+ * - 每周期最多处理 10 个任务
+ */
 @Slf4j
 @Service
 public class TaskService {

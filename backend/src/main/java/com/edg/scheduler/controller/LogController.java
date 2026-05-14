@@ -12,6 +12,17 @@ import org.springframework.web.bind.annotation.*;
 import java.time.LocalDateTime;
 import java.util.Map;
 
+/**
+ * 操作日志控制器
+ *
+ * 提供操作日志查询 API（需 ADMIN 权限）：
+ * - 支持分页查询
+ * - 支持按用户名查询
+ * - 支持按角色查询
+ * - 支持按时间范围查询
+ *
+ * 日志由 OperationLogAspect 切面自动记录
+ */
 @RestController
 @RequestMapping("/api/logs")
 public class LogController {

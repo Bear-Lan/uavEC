@@ -14,8 +14,14 @@ import org.redisson.api.RedissonClient;
 import org.redisson.api.RSet;
 
 /**
- * 追踪在线用户，提供 WebSocket 广播通知。
- * 使用 Redis Set 存储，支持多实例部署。
+ * 用户会话服务
+ *
+ * 核心职责：
+ * - 追踪在线用户（基于 Redis Set 存储，支持多实例部署）
+ * - 用户上线/下线广播
+ * - WebSocket 实时推送在线用户列表
+ *
+ * 使用 Redis Set 存储在线用户信息，支持水平扩展
  */
 @Slf4j
 @Service

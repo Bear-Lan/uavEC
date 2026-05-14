@@ -11,6 +11,16 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * 全局异常处理器
+ *
+ * 统一处理系统中的各类异常：
+ * - Exception: 通用异常，返回 500 状态码
+ * - IllegalArgumentException: 参数异常，返回 400 状态码
+ * - MethodArgumentNotValidException: 参数校验异常，返回 422 状态码（含详细字段错误）
+ *
+ * 异常日志使用 Slf4j 记录，便于问题追踪
+ */
 @Slf4j
 @ControllerAdvice
 public class GlobalExceptionHandler {

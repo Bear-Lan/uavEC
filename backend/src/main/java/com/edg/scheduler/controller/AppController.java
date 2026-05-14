@@ -22,6 +22,43 @@ import java.util.List;
 import java.util.Map;
 import java.lang.management.ManagementFactory;
 
+/**
+ * 应用主控制器
+ *
+ * 提供系统核心功能 API：
+ *
+ * 任务管理 (/api/tasks/*):
+ * - GET /tasks/completed - 获取已完成任务列表
+ * - POST /tasks - 提交单个任务
+ * - POST /tasks/batch - 批量提交任务
+ * - GET /tasks/{taskId}/trace - 获取任务追踪日志
+ *
+ * 节点管理 (/api/nodes/*):
+ * - GET /nodes - 获取所有节点
+ * - POST /nodes/add - 添加新节点
+ * - DELETE /nodes/{id} - 删除节点
+ * - POST /nodes/{id}/status - 设置节点在线/离线状态
+ * - POST /nodes/{id}/charge - 紧急充电
+ * - POST /nodes/{id}/position - 设置节点位置（手动锚定）
+ * - POST /nodes/snapshot - 创建集群快照
+ * - POST /nodes/rollback - 回滚集群状态
+ * - PUT /nodes/{id}/config - 更新节点配置
+ *
+ * 流量生成 (/api/traffic/*):
+ * - POST /traffic/start - 启动泊松流量生成
+ * - POST /traffic/stop - 停止流量生成
+ * - GET /traffic/status - 获取流量生成状态
+ *
+ * 指标查询 (/api/metrics/*):
+ * - GET /metrics/{batchId} - 获取批次性能指标
+ * - GET /metrics/history - 获取历史性能指标
+ * - GET /metrics/export - 导出指标为 CSV
+ *
+ * 系统状态 (/api/system/*):
+ * - GET /system/status - 获取系统状态
+ *
+ * 初始化时自动创建默认管理员账户
+ */
 @RestController
 @RequestMapping("/api")
 public class AppController {

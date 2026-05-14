@@ -9,8 +9,13 @@ import org.springframework.stereotype.Service;
 import java.util.Random;
 
 /**
- * Phase 2: Poisson Traffic Generator / 泊松过程流量生成器
- * 模拟真实世界边缘网络中的突发请求洪峰和白噪声基础流量。
+ * 泊松流量生成服务
+ *
+ * 基于泊松过程模拟真实世界边缘网络中的突发流量：
+ * - 使用 Knuth 算法生成泊松分布随机变量
+ * - 每秒生成 λ 个任务（λ 为泊松分布期望值）
+ * - 支持 IMAGE_PROCESSING / SENSOR_DATA / VIDEO_ANALYSIS 三种任务类型
+ * - 蒙特卡洛随机采样增加环境混沌性
  */
 @Slf4j
 @Service

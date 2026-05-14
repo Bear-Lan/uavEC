@@ -12,6 +12,19 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 认证控制器
+ *
+ * 提供用户认证和会话管理相关 API：
+ * - 用户注册（/api/auth/register）
+ * - 用户登录（/api/auth/login）
+ * - 获取当前用户信息（/api/auth/me）
+ * - 用户登出（/api/auth/logout）
+ * - 在线用户查询（/api/auth/online-users）
+ * - 用户资料更新（/api/auth/profile）
+ *
+ * 认证方式：Token-based 认证，Token 有效期 24 小时
+ */
 @RestController
 @RequestMapping("/api/auth")
 @CrossOrigin(origins = "*")

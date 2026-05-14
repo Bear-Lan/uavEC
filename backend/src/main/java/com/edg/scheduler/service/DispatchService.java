@@ -22,6 +22,22 @@ import com.edg.scheduler.repository.TaskTraceLogRepository;
 
 import org.redisson.api.RedissonClient;
 
+/**
+ * 任务分发服务
+ *
+ * 核心职责：
+ * - 根据调度算法选择最优节点
+ * - 卸载决策（threshold / energy / latency）
+ * - 部分卸载支持（大数据任务分割处理）
+ * - 云端降级处理
+ * - 实时状态广播（WebSocket）
+ *
+ * 优化特性：
+ * - Shannon 容量带宽模型
+ * - 历史性能预测
+ * - 能耗感知决策
+ * - 延迟优化决策
+ */
 @Slf4j
 @Service
 public class DispatchService {

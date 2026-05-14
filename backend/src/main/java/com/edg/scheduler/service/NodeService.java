@@ -20,6 +20,22 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+/**
+ * 无人机节点服务层
+ *
+ * 核心职责：
+ * - 节点生命周期管理（初始化、添加、删除）
+ * - 资源分配与释放（基于 Redisson 分布式锁）
+ * - 环境模拟（电池消耗、航点巡航、光伏充能）
+ * - 故障检测与自动恢复（RTH 返航、坠毁处理）
+ * - 集群快照与回滚（用于混沌工程测试）
+ *
+ * 硬件异构支持：
+ * - HEAVY_GPU: 高算力节点
+ * - BALANCED: 均衡型节点（默认）
+ * - SOLAR_SCOUT: 光伏充能节点
+ * - MICRO_SENSOR: 微型传感器节点
+ */
 @Slf4j
 @Service
 public class NodeService {

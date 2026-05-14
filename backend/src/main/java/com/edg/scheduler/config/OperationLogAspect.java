@@ -12,6 +12,19 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
+/**
+ * 操作日志切面
+ *
+ * 使用 AOP 环绕通知自动记录所有 Controller 操作的日志：
+ * - 切入点：com.edg.scheduler.controller 包下的所有方法
+ * - 记录内容：请求路径、HTTP 方法、客户端 IP、User-Agent
+ * - 记录结果：响应状态码、错误信息
+ * - 特殊处理：登录注册接口跳过记录
+ *
+ * 日志记录失败不影响主业务逻辑
+ *
+ * @see OperationLog
+ */
 @Aspect
 @Component
 public class OperationLogAspect {
