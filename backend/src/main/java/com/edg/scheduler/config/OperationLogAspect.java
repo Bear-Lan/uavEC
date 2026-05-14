@@ -65,6 +65,7 @@ public class OperationLogAspect {
         }
 
         OperationLog log = new OperationLog();
+        log.setAction(request.getMethod() + " " + path);
         log.setResource(path);
         log.setMethod(request.getMethod());
         log.setIpAddress(getClientIp(request));
@@ -72,14 +73,18 @@ public class OperationLogAspect {
 
         // 获取当前用户
         Object user = request.getAttribute("currentUser");
+        String username = "ANONYMOUS";  // 默认值，保证不为 null
+        String role = "UNKNOWN";       // 默认值，保证不为 null
         if (user != null) {
             try {
-                Object username = getFieldValue(user, "getUsername");
-                Object role = getFieldValue(user, "getRole");
-                if (username != null) log.setUsername(username.toString());
-                if (role != null) log.setRole(role.toString());
+                Object u = getFieldValue(user, "getUsername");
+                Object r = getFieldValue(user, "getRole");
+                if (u != null) username = u.toString();
+                if (r != null) role = r.toString();
             } catch (Exception ignored) {}
         }
+        log.setUsername(username);
+        log.setRole(role);
 
         // 获取请求参数
         log.setRequestParams(getRequestParams(joinPoint, request));

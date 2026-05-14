@@ -112,11 +112,13 @@ public class UserSessionService {
      */
     public void userLogout(String username) {
         RSet<String> onlineSet = redissonClient.getSet(ONLINE_USERS_KEY);
+
         onlineSet.removeIf(json -> {
             try {
                 OnlineUserInfo existing = objectMapper.readValue(json, OnlineUserInfo.class);
                 return existing.getUsername().equals(username);
-            } catch (JsonProcessingException e) {
+            } catch (Exception e) {
+                log.error("Failed to parse OnlineUserInfo during logout: {}", json, e);
                 return false;
             }
         });

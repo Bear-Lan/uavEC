@@ -54,7 +54,9 @@ public class AuthInterceptor implements HandlerInterceptor {
     // 无需权限检查的路径
     private static final Set<String> PUBLIC_PATHS = Set.of(
             "/api/auth/login",
-            "/api/auth/register"
+            "/api/auth/register",
+            "/api/auth/logout",
+            "/api/auth/online"
     );
 
     @Autowired
@@ -82,7 +84,20 @@ public class AuthInterceptor implements HandlerInterceptor {
         String path = request.getRequestURI();
 
         // 跳过非API请求和公开路径
-        if (!path.startsWith("/api") || isPublicPath(path)) {
+        if (!path.startsWith("/api")) {
+            return true;
+        }
+
+        // 公开路径：跳过权限检查，但尝试解析用户信息供日志使用
+        if (isPublicPath(path)) {
+            String token = request.getHeader("X-Auth-Token");
+            if (token != null && !token.isEmpty()) {
+                Operator operator = operatorRepository.findByToken(token).orElse(null);
+                if (operator != null && operator.isEnabled()) {
+                    request.setAttribute("currentUser", operator);
+                    request.setAttribute("currentUserRole", operator.getRole());
+                }
+            }
             return true;
         }
 
