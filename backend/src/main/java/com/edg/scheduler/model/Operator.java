@@ -8,56 +8,59 @@ import lombok.Data;
 import java.util.UUID;
 
 /**
- * 操作员实体类 - 对应数据库表 operator
+ * 操作员实体类
  *
- * 支持两种角色：
- * - ADMIN: 管理员，拥有全部权限（用户管理、节点增删、系统配置等）
- * - OPERATOR: 操作员，仅可操作任务和查看节点状态
- *
- * 认证方式：基于 Token 的简单认证，支持 24 小时过期时间
+ * 表示系统中的用户操作员，包含认证和授权信息：
+ * - id: 操作员唯一标识（UUID）
+ * - username: 用户名（唯一）
+ * - password: BCrypt加密密码
+ * - role: 角色（ADMIN/OPERATOR）
+ * - enabled: 账户启用状态
+ * - x, y: 用户地理位置坐标
+ * - token: 认证令牌
+ * - tokenExpiryTime: 令牌过期时间
+ * - lastLoginTime: 最后登录时间
+ * - createdTime: 账户创建时间
  */
 @Data
 @Entity
 @Table(name = "operator")
 public class Operator {
-    /** 唯一标识符，UUID 格式 */
     @Id
     private String id;
 
-    /** 用户名，唯一且不可为空 */
     @Column(unique = true, nullable = false)
     private String username;
 
-    /** 密码，BCrypt 加密存储 */
     @Column(nullable = false)
     private String password;
 
-    /** 角色：ADMIN 或 OPERATOR */
     @Column(nullable = false)
     private String role;
 
-    /** 账户启用/禁用状态 */
     private boolean enabled;
 
-    /** 坐标 X（用于任务起源地参考） */
     private double x;
 
-    /** 坐标 Y（用于任务起源地参考） */
     private double y;
 
-    /** 认证 Token */
     private String token;
 
-    /** Token 过期时间戳（毫秒），0 表示永不过期 */
     private long tokenExpiryTime;
 
-    /** 最后登录时间戳 */
     private long lastLoginTime;
 
-    /** 账户创建时间戳 */
     private long createdTime;
 
-    /** 默认构造函数 */
+    /**
+     * 默认构造函数
+     *
+     * 功能说明：
+     * - 生成UUID作为唯一标识
+     * - 设置默认角色为OPERATOR
+     * - 设置账户默认启用
+     * - 记录创建时间
+     */
     public Operator() {
         this.id = UUID.randomUUID().toString();
         this.role = "OPERATOR";
@@ -66,11 +69,12 @@ public class Operator {
     }
 
     /**
-     * 完整构造函数
+     * 带参构造函数
+     *
      * @param username 用户名
-     * @param hashedPassword BCrypt 加密后的密码
-     * @param x 初始坐标 X
-     * @param y 初始坐标 Y
+     * @param hashedPassword 已加密的密码
+     * @param x X坐标
+     * @param y Y坐标
      */
     public Operator(String username, String hashedPassword, double x, double y) {
         this.id = UUID.randomUUID().toString();

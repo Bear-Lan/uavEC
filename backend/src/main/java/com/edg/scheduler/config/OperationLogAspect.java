@@ -36,6 +36,20 @@ public class OperationLogAspect {
     @Pointcut("execution(* com.edg.scheduler.controller..*.*(..))")
     public void controllerPointcut() {}
 
+    /**
+     * 记录操作日志
+     *
+     * 功能说明：
+     * - 使用AOP环绕通知自动记录所有Controller操作
+     * - 记录请求路径、HTTP方法、客户端IP、User-Agent
+     * - 记录请求参数（脱敏处理）
+     * - 记录响应状态码
+     * - 跳过登录注册公开接口
+     *
+     * @param joinPoint 连接点
+     * @return 方法执行结果
+     * @throws Throwable 如果方法执行发生异常
+     */
     @Around("controllerPointcut()")
     public Object logOperation(ProceedingJoinPoint joinPoint) throws Throwable {
         HttpServletRequest request = getRequest();
@@ -90,11 +104,24 @@ public class OperationLogAspect {
         return result;
     }
 
+    /**
+     * 获取当前HTTP请求
+     *
+     * @return HttpServletRequest
+     */
     private HttpServletRequest getRequest() {
         ServletRequestAttributes attrs = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
         return attrs != null ? attrs.getRequest() : null;
     }
 
+    /**
+     * 获取客户端真实IP地址
+     *
+     * 优先级：X-Forwarded-For > X-Real-IP > RemoteAddr
+     *
+     * @param request HTTP请求
+     * @return 客户端IP
+     */
     private String getClientIp(HttpServletRequest request) {
         String ip = request.getHeader("X-Forwarded-For");
         if (ip == null || ip.isEmpty()) {
@@ -106,6 +133,13 @@ public class OperationLogAspect {
         return ip;
     }
 
+    /**
+     * 获取请求参数
+     *
+     * @param joinPoint 连接点
+     * @param request HTTP请求
+     * @return 格式化的参数字符串
+     */
     private String getRequestParams(ProceedingJoinPoint joinPoint, HttpServletRequest request) {
         StringBuilder sb = new StringBuilder();
         sb.append("{");
@@ -133,6 +167,12 @@ public class OperationLogAspect {
         return sb.toString();
     }
 
+    /**
+     * 脱敏处理请求参数
+     *
+     * @param param 参数对象
+     * @return 脱敏后的字符串
+     */
     private String sanitizeParam(Object param) {
         if (param == null) return "null";
 
@@ -144,6 +184,13 @@ public class OperationLogAspect {
         return str;
     }
 
+    /**
+     * 反射获取对象字段值
+     *
+     * @param obj 对象
+     * @param fieldName 字段getter方法名
+     * @return 字段值
+     */
     private Object getFieldValue(Object obj, String fieldName) {
         try {
             return obj.getClass().getMethod(fieldName).invoke(obj);

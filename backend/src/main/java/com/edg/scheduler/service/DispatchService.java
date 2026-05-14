@@ -59,6 +59,16 @@ public class DispatchService {
 
     private final Map<String, SchedulingAlgorithm> algorithms;
 
+    /**
+     * 构造函数 - 初始化调度算法映射
+     *
+     * 功能描述：
+     * - 注入所有实现了SchedulingAlgorithm接口的算法组件
+     * - 将算法名称作为key，算法实例作为value存入Map
+     * - 用于后续快速查找调度算法
+     *
+     * @param algoList Spring自动注入的算法列表
+     */
     @Autowired
     public DispatchService(List<SchedulingAlgorithm> algoList) {
         this.algorithms = algoList.stream()
@@ -89,6 +99,26 @@ public class DispatchService {
     @Value("${app.scheduler.offload.distance-delay-ms-per-unit:5.0}")
     private double distanceDelayMsPerUnit;
 
+    /**
+     * 分发任务到最优节点
+     *
+     * 功能描述：
+     * - 根据任务调度算法选择最优节点
+     * - 执行卸载决策（threshold/energy/latency）
+     * - 支持部分卸载（大任务分割处理）
+     * - 支持云端降级处理
+     * - 异步执行任务并记录追踪日志
+     *
+     * 决策流程：
+     * 1. 过滤可用节点（在线且资源充足）
+     * 2. 使用调度算法选择最优节点
+     * 3. 根据offloadAlgorithm决定是否卸载到云端
+     * 4. 部分卸载时分割任务到边缘和云端
+     * 5. 云端降级作为最终fallback
+     *
+     * @param task 待分发的任务
+     * @return 分发结果（成功/失败、分配节点、任务信息）
+     */
     @Transactional
     public DispatchResult dispatch(TaskInfo task) {
         // 单个任务的算法覆盖设定，如无则回退使用全局配置算法
@@ -392,6 +422,20 @@ public class DispatchService {
         return executeCloudFallback(task, "Edge allocation failed for all candidate nodes");
     }
 
+    /**
+     * 云端降级处理
+     *
+     * 功能描述：
+     * - 当边缘节点分配失败时执行
+     * - 将任务分配到CLOUD-SERVER虚拟节点
+     * - 计算传输延迟（数据量/带宽+广域网延迟）
+     * - 异步执行云端计算
+     * - 记录追踪日志
+     *
+     * @param task 任务对象
+     * @param reason 降级原因
+     * @return 分发结果
+     */
     private DispatchResult executeCloudFallback(TaskInfo task, String reason) {
         log.info("Task {} falling back to CLOUD-SERVER. Reason: {}", task.getId(), reason);
         task.setAssignedUavId("CLOUD-SERVER");
@@ -441,6 +485,26 @@ public class DispatchService {
         return DispatchResult.success(task, "CLOUD-SERVER (Fallback)");
     }
 
+    /**
+     * 模拟任务执行过程
+     *
+     * 功能描述：
+     * - 异步执行任务模拟
+     * - 根据数据量和节点CPU计算执行时间
+     * - 执行完成后更新任务状态为COMPLETED
+     * - 使用状态栅栏防止覆盖已迁移的任务
+     * - 计算并记录实际能耗
+     * - 任务完成后释放节点资源
+     *
+     * 状态栅栏机制：
+     * - 执行前检查数据库中任务状态
+     * - 如果任务已被迁移或重排，则中止执行
+     * - 防止"幽灵进程"覆盖有效状态
+     *
+     * @param task 任务对象
+     * @param node 执行节点
+     * @param transmissionDelay 传输延迟（毫秒）
+     */
     private void simulateExecution(TaskInfo task, UAVNode node, long transmissionDelay) {
         CompletableFuture.runAsync(() -> {
             try {
@@ -526,14 +590,36 @@ public class DispatchService {
         });
     }
 
+    /**
+     * 广播节点状态到WebSocket
+     *
+     * 功能描述：
+     * - 获取所有节点的当前状态
+     * - 推送到/topic/nodes主题
+     * - 供前端实时更新节点列表
+     */
     public void broadcastState() {
         messagingTemplate.convertAndSend("/topic/nodes", nodeService.getAllNodes());
     }
 
+    /**
+     * 广播任务状态更新到WebSocket
+     *
+     * @param task 任务对象
+     */
     private void broadcastTaskUpdate(TaskInfo task) {
         messagingTemplate.convertAndSend("/topic/tasks", task);
     }
 
+    /**
+     * 计算两点之间的欧几里得距离
+     *
+     * @param x1 点1 X坐标
+     * @param y1 点1 Y坐标
+     * @param x2 点2 X坐标
+     * @param y2 点2 Y坐标
+     * @return 欧几里得距离
+     */
     private double calculateDistance(double x1, double y1, double x2, double y2) {
         return Math.sqrt(Math.pow(x1 - x2, 2) + Math.pow(y1 - y2, 2));
     }

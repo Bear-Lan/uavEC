@@ -1,12 +1,11 @@
 package com.edg.scheduler.controller;
 
-import com.edg.scheduler.model.Operator;
 import com.edg.scheduler.model.UserDTO;
-import com.edg.scheduler.repository.OperatorRepository;
+import com.edg.scheduler.service.AuthService;
+import com.edg.scheduler.service.UserSessionService;
 import lombok.Data;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -15,15 +14,13 @@ import java.util.Map;
 /**
  * 认证控制器
  *
- * 提供用户认证和会话管理相关 API：
- * - 用户注册（/api/auth/register）
- * - 用户登录（/api/auth/login）
- * - 获取当前用户信息（/api/auth/me）
- * - 用户登出（/api/auth/logout）
- * - 在线用户查询（/api/auth/online-users）
- * - 用户资料更新（/api/auth/profile）
- *
- * 认证方式：Token-based 认证，Token 有效期 24 小时
+ * 处理用户认证相关操作：
+ * - 用户注册：创建新用户账户（默认角色为OPERATOR）
+ * - 用户登录：验证用户名密码，返回认证令牌
+ * - 个人信息：获取当前用户详情
+ * - 登出操作：清除用户会话
+ * - 在线用户：获取当前在线用户列表
+ * - 资料更新：修改用户名和位置坐标
  */
 @RestController
 @RequestMapping("/api/auth")
@@ -31,14 +28,24 @@ import java.util.Map;
 public class AuthController {
 
     @Autowired
-    private OperatorRepository operatorRepository;
+    private AuthService authService;
 
     @Autowired
-    private PasswordEncoder passwordEncoder;
+    private UserSessionService userSessionService;
 
-    @Autowired
-    private com.edg.scheduler.service.UserSessionService userSessionService;
-
+    /**
+     * 用户注册
+     *
+     * 请求体参数：
+     * - username: 用户名（必填）
+     * - password: 密码（必填）
+     * - x: 坐标X（可选，默认50）
+     * - y: 坐标Y（可选，默认50）
+     *
+     * @param body 请求体（JSON格式）
+     * @return 注册成功的用户信息（包含id、username、role）
+     *         用户名已存在返回400
+     */
     @PostMapping("/register")
     public ResponseEntity<?> register(@RequestBody Map<String, Object> body) {
         String username = (String) body.get("username");
@@ -46,50 +53,64 @@ public class AuthController {
         double x = ((Number) body.getOrDefault("x", 50)).doubleValue();
         double y = ((Number) body.getOrDefault("y", 50)).doubleValue();
 
-        if (operatorRepository.findByUsername(username).isPresent()) {
-            return ResponseEntity.badRequest().body(Map.of("message", "用户名已存在"));
+        try {
+            UserDTO user = authService.register(username, password, x, y);
+            return ResponseEntity.ok(user);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         }
-
-        Operator operator = new Operator(username, passwordEncoder.encode(password), x, y);
-        operatorRepository.save(operator);
-        return ResponseEntity.ok(UserDTO.fromEntity(operator));
     }
 
+    /**
+     * 用户登录
+     *
+     * 请求体参数：
+     * - username: 用户名
+     * - password: 密码
+     *
+     * @param body 请求体（JSON格式）
+     * @return 包含user和token的Map
+     *         用户名或密码错误返回401
+     *         账户被禁用返回403
+     */
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody Map<String, Object> body) {
         String username = (String) body.get("username");
         String password = (String) body.get("password");
 
-        Operator operator = operatorRepository.findByUsername(username).orElse(null);
-        if (operator == null || !passwordEncoder.matches(password, operator.getPassword())) {
-            return ResponseEntity.status(401).body(Map.of("message", "用户名或密码错误"));
+        try {
+            Map<String, Object> result = authService.login(username, password);
+            return ResponseEntity.ok(result);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(401).body(Map.of("message", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(403).body(Map.of("message", e.getMessage()));
         }
-
-        if (!operator.isEnabled()) {
-            return ResponseEntity.status(403).body(Map.of("message", "该账户已被禁用"));
-        }
-
-        String token = java.util.UUID.randomUUID().toString();
-        operator.setToken(token);
-        // Token expires in 24 hours
-        operator.setTokenExpiryTime(System.currentTimeMillis() + 24 * 60 * 60 * 1000);
-        operator.setLastLoginTime(System.currentTimeMillis());
-        operatorRepository.save(operator);
-
-        // 记录用户上线并广播在线用户列表
-        userSessionService.userLogin(username);
-
-        UserDTO dto = UserDTO.fromEntity(operator);
-        return ResponseEntity.ok(Map.of("user", dto, "token", token));
     }
 
+    /**
+     * 获取当前用户信息
+     *
+     * @param username 用户名
+     * @return 用户信息（如果存在）
+     *         不存在返回404
+     */
     @GetMapping("/me")
     public ResponseEntity<UserDTO> getMe(@RequestParam String username) {
-        return operatorRepository.findByUsername(username)
-                .map(u -> ResponseEntity.ok(UserDTO.fromEntity(u)))
+        return authService.getCurrentUser(username)
+                .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
 
+    /**
+     * 用户登出
+     *
+     * 请求体参数：
+     * - username: 用户名
+     *
+     * @param body 请求体（JSON格式）
+     * @return 登出成功消息
+     */
     @PostMapping("/logout")
     public ResponseEntity<?> logout(@RequestBody Map<String, String> body) {
         String username = body.get("username");
@@ -99,11 +120,25 @@ public class AuthController {
         return ResponseEntity.ok(Map.of("message", "Logged out"));
     }
 
+    /**
+     * 获取当前在线用户列表
+     *
+     * @return 在线用户信息列表（包含用户名、坐标、登录时间）
+     */
     @GetMapping("/online-users")
     public ResponseEntity<List<com.edg.scheduler.service.UserSessionService.OnlineUserInfo>> getOnlineUsers() {
         return ResponseEntity.ok(userSessionService.getOnlineUsers());
     }
 
+    /**
+     * 宣告用户上线
+     *
+     * 请求体参数：
+     * - username: 用户名
+     *
+     * @param body 请求体（JSON格式）
+     * @return 上线成功状态
+     */
     @PostMapping("/online")
     public ResponseEntity<?> announceOnline(@RequestBody Map<String, String> body) {
         String username = body.get("username");
@@ -121,24 +156,32 @@ public class AuthController {
         private double y;
     }
 
+    /**
+     * 更新个人资料
+     *
+     * 请求体参数：
+     * - currentUsername: 当前用户名
+     * - newUsername: 新用户名
+     * - x: 新坐标X
+     * - y: 新坐标Y
+     *
+     * @param req 更新请求体
+     * @return 更新后的用户信息
+     *         当前用户不存在返回400
+     *         新用户名已被占用返回400
+     */
     @PutMapping("/profile")
     public ResponseEntity<?> updateProfile(@RequestBody UpdateProfileRequest req) {
-        Operator existing = operatorRepository.findByUsername(req.getCurrentUsername()).orElse(null);
-        if (existing == null) {
-            return ResponseEntity.status(404).body(Map.of("error", "Current user not found"));
+        try {
+            UserDTO user = authService.updateProfile(
+                    req.getCurrentUsername(),
+                    req.getNewUsername(),
+                    req.getX(),
+                    req.getY()
+            );
+            return ResponseEntity.ok(user);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(400).body(Map.of("error", e.getMessage()));
         }
-
-        if (!req.getCurrentUsername().equals(req.getNewUsername())) {
-            if (operatorRepository.findByUsername(req.getNewUsername()).isPresent()) {
-                return ResponseEntity.status(400).body(Map.of("error", "Username already exists"));
-            }
-        }
-
-        existing.setUsername(req.getNewUsername());
-        existing.setX(req.getX());
-        existing.setY(req.getY());
-        operatorRepository.save(existing);
-
-        return ResponseEntity.ok(UserDTO.fromEntity(existing));
     }
 }

@@ -82,7 +82,23 @@ public class NodeService {
     @Autowired
     private RedissonClient redissonClient;
 
-    // Phase 2: Assign a heterogeneous hardware profile to a new UAV node
+    /**
+     * 应用硬件配置文件到节点
+     *
+     * 功能描述：
+     * - 根据节点索引选择硬件配置文件
+     * - 支持4种硬件类型：HEAVY_GPU、SOLAR_SCOUT、MICRO_SENSOR、BALANCED
+     * - 设置对应的CPU、内存、带宽、能耗参数
+     *
+     * 硬件配置详情：
+     * - HEAVY_GPU: 双倍CPU和内存，200Mbps带宽，能耗2.5倍
+     * - SOLAR_SCOUT: 半价CPU，50Mbps带宽，能耗0.3倍，光伏充能0.6%/2秒
+     * - MICRO_SENSOR: 1/4 CPU，20Mbps带宽，能耗0.15倍
+     * - BALANCED: 默认配置，无特殊属性
+     *
+     * @param node 目标节点
+     * @param nodeIndex 节点索引（用于选择配置）
+     */
     private void applyHardwareProfile(UAVNode node, int nodeIndex) {
         int profileSelector = nodeIndex % 4;
         switch (profileSelector) {
@@ -123,6 +139,17 @@ public class NodeService {
         }
     }
 
+    /**
+     * 初始化节点集群
+     *
+     * 功能描述：
+     * - 在Spring容器初始化完成后（@PostConstruct）自动调用
+     * - 根据配置创建initialNodeCount个无人机节点
+     * - 节点ID格式：UAV-1, UAV-2, ...
+     * - 交替设置CPU：偶数ID为8核，奇数ID为4核
+     * - 为每个节点分配航点坐标和硬件配置文件
+     * - 所有节点初始状态为在线
+     */
     @PostConstruct
     public void initNodes() {
         for (int i = 1; i <= initialNodeCount; i++) {
@@ -139,6 +166,18 @@ public class NodeService {
         log.info("Initialized {} heterogeneous UAV nodes", initialNodeCount);
     }
 
+    /**
+     * 动态添加新节点
+     *
+     * 功能描述：
+     * - 使用Redisson分布式锁保证线程安全
+     * - 生成新的节点ID（格式：UAV-N，N递增）
+     * - 根据ID奇偶性设置CPU核心数
+     * - 应用硬件配置文件
+     * - 添加到节点映射并推送更新到WebSocket
+     *
+     * @return 新创建的节点对象
+     */
     @Transactional
     public UAVNode addNode() {
         RLock lock = redissonClient.getLock("node:management");
@@ -159,6 +198,18 @@ public class NodeService {
         }
     }
 
+    /**
+     * 删除指定节点
+     *
+     * 功能描述：
+     * - 使用Redisson分布式锁保证线程安全
+     * - 从节点映射中移除指定节点
+     * - 调用TaskService重新排队该节点的所有活跃任务
+     * - 推送节点列表更新到WebSocket
+     *
+     * @param nodeId 要删除的节点ID
+     * @return 是否删除成功
+     */
     public boolean deleteNode(String nodeId) {
         RLock lock = redissonClient.getLock("node:management");
         try {
@@ -177,7 +228,18 @@ public class NodeService {
         }
     }
 
-    // 暴露供紧急手动回血的 API 接口
+    /**
+     * 紧急充电 - 手动恢复节点电量
+     *
+     * 功能描述：
+     * - 将指定节点的电池充至100%
+     * - 设置节点状态为在线
+     * - 退出RTH返航模式和充电状态
+     * - 解除手动位置锁定，恢复自动巡逻
+     * - 用于故障恢复后的紧急处理
+     *
+     * @param nodeId 目标节点ID
+     */
     public void emergencyCharge(String nodeId) {
         UAVNode node = nodes.get(nodeId);
         if (node != null) {
@@ -193,6 +255,18 @@ public class NodeService {
 
     // --- Sandbox Isolation Mechanism ---
 
+    /**
+     * 创建集群快照
+     *
+     * 功能描述：
+     * - 使用Redisson分布式锁保证线程安全
+     * - 深拷贝所有当前节点状态到snapshotNodes映射
+     * - 用于混沌工程测试，支持回滚到快照状态
+     *
+     * 快照内容：
+     * - 所有节点的完整状态（位置、电量、资源使用等）
+     * - 不包含任务队列状态
+     */
     public void createSnapshot() {
         RLock lock = redissonClient.getLock("node:management");
         try {
@@ -209,6 +283,19 @@ public class NodeService {
         }
     }
 
+    /**
+     * 从快照恢复集群状态
+     *
+     * 功能描述：
+     * - 使用Redisson分布式锁保证线程安全
+     * - 从snapshotNodes恢复所有节点状态
+     * - 调用TaskService重新排队所有活跃任务
+     * - 推送节点列表更新到WebSocket
+     *
+     * 注意：
+     * - 如果快照为空则不执行恢复
+     * - 恢复后任务状态会被重置为QUEUED
+     */
     public void restoreSnapshot() {
         RLock lock = redissonClient.getLock("node:management");
         try {
@@ -232,16 +319,38 @@ public class NodeService {
         }
     }
 
+    /**
+     * 获取所有节点列表
+     *
+     * @return 所有节点的列表（ArrayList副本）
+     */
     public List<UAVNode> getAllNodes() {
         return new ArrayList<>(nodes.values());
     }
 
+    /**
+     * 获取指定节点
+     *
+     * @param id 节点ID
+     * @return 节点对象（如果不存在返回null）
+     */
     public UAVNode getNode(String id) {
         return nodes.get(id);
     }
 
     /**
-     * 基于分布式锁保护的核心硬件资源扣减分配 (使用 Redisson 取代本地 synchronized 关键字以支持微服务扩容)。
+     * 分配硬件资源到节点
+     *
+     * 功能描述：
+     * - 使用Redisson分布式锁保证线程安全
+     * - 检查节点是否在线且电量充足（>5%）
+     * - 增加节点的CPU和内存使用量
+     * - 增加节点的活跃任务计数
+     *
+     * @param nodeId 节点ID
+     * @param requiredCpu 需要分配的CPU核心数
+     * @param requiredMemory 需要分配的内存大小
+     * @return 是否分配成功
      */
     public boolean allocate(String nodeId, double requiredCpu, double requiredMemory) {
         RLock lock = redissonClient.getLock("node:alloc:" + nodeId);
@@ -268,7 +377,17 @@ public class NodeService {
     }
 
     /**
-     * 基于分布式锁保护的硬件资源归还释放。
+     * 释放节点硬件资源
+     *
+     * 功能描述：
+     * - 使用Redisson分布式锁保证线程安全
+     * - 减少节点的CPU和内存使用量
+     * - 减少节点的活跃任务计数
+     * - 防止计数变为负数（兜底逻辑）
+     *
+     * @param nodeId 节点ID
+     * @param releasedCpu 要释放的CPU核心数
+     * @param releasedMemory 要释放的内存大小
      */
     public void release(String nodeId, double releasedCpu, double releasedMemory) {
         RLock lock = redissonClient.getLock("node:alloc:" + nodeId);
@@ -290,8 +409,22 @@ public class NodeService {
     }
 
     /**
-     * 定时模拟环境演进：包含电池物理消耗、航点导航、以及低电量自动返航与坠毁断线逻辑。
-     * 这些航点让 "geo" (地理拓扑) 调度算法真正有了在物理世界航迹上运作的实感。
+     * 定时模拟环境演进
+     *
+     * 功能描述：
+     * - 每2秒执行一次（@Scheduled(fixedRate = 2000)）
+     * - 使用Redisson分布式锁保证线程安全
+     * - 模拟电池放电（基础+计算负载）
+     * - 模拟光伏充能（SOLAR_SCOUT类型节点）
+     * - 模拟航点巡航导航
+     * - 自动触发RTH返航（电量<=15%）
+     * - 自动触发坠毁（电量<=0）
+     *
+     * 环境模拟细节：
+     * - 航点巡航：每40秒切换航点，移动速度2单位/2秒
+     * - 电池放电：基础0.2%/2秒 + 计算负载消耗（×硬件能耗系数）
+     * - 光伏充能：70%概率充能，+0.6%/2秒（SOLAR_SCOUT类型）
+     * - RTH返航：速度3单位/2秒，充至100%后恢复巡逻
      */
     @Scheduled(fixedRate = 2000)
     public void simulateEnvironment() {
@@ -435,7 +568,17 @@ public class NodeService {
         }
     }
 
-    // 暴露供系统故障注入和混沌工程测试的 API 接口
+    /**
+     * 设置节点在线/离线状态（故障注入）
+     *
+     * 功能描述：
+     * - 用于系统故障注入和混沌工程测试
+     * - 下线节点：重新排队该节点所有活跃任务，重置资源计数
+     * - 上线节点：恢复电池至100%，退出RTH和充电模式
+     *
+     * @param nodeId 节点ID
+     * @param online 是否在线
+     */
     public void setNodeStatus(String nodeId, boolean online) {
         UAVNode node = nodes.get(nodeId);
         if (node != null) {
@@ -456,6 +599,20 @@ public class NodeService {
         }
     }
 
+    /**
+     * 更新节点硬件配置
+     *
+     * 功能描述：
+     * - 动态调整节点的CPU、内存、带宽配置
+     * - 只更新非null参数（可选更新）
+     * - 推送更新后的节点列表到WebSocket
+     *
+     * @param nodeId 节点ID
+     * @param maxCpu 最大CPU（可选）
+     * @param maxMemory 最大内存（可选）
+     * @param networkBandwidth 网络带宽（可选）
+     * @return 更新后的节点对象（不存在返回null）
+     */
     public UAVNode updateNodeConfig(String nodeId, Double maxCpu, Double maxMemory, Double networkBandwidth) {
         UAVNode node = nodes.get(nodeId);
         if (node != null) {

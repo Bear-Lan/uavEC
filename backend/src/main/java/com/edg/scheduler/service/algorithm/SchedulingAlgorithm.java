@@ -7,9 +7,12 @@ import java.util.List;
 /**
  * 调度算法接口
  *
- * 定义任务调度节点选择算法的标准接口。
- * 支持多种调度策略：贪心、加权公平队列、地理拓扑、自定义权重
+ * 定义任务调度节点选择算法的标准接口：
+ * - getName: 返回算法标识（greedy/wfq/geo/custom）
+ * - selectNode: 从可用节点列表中选择最优节点
+ * - calculateDistance: 默认方法，计算两点间欧几里得距离
  *
+ * 实现类：
  * @see GreedyAlgorithm 贪心算法
  * @see WfqAlgorithm 加权公平队列算法
  * @see GeoAlgorithm 地理拓扑算法

@@ -24,6 +24,16 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
 @EnableWebSocketMessageBroker
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
+    /**
+     * 配置消息代理
+     *
+     * 功能说明：
+     * - 配置STOMP协议的消息代理
+     * - /topic: 广播消息前缀（服务器推送给客户端）
+     * - /app: 应用目标前缀（客户端发送给服务器）
+     *
+     * @param config 消息代理配置器
+     */
     @Override
     public void configureMessageBroker(MessageBrokerRegistry config) {
         // Prefix for messages sent from server to client
@@ -32,6 +42,16 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         config.setApplicationDestinationPrefixes("/app");
     }
 
+    /**
+     * 注册STOMP端点
+     *
+     * 功能说明：
+     * - 注册WebSocket连接端点
+     * - 端点路径：/ws
+     * - 启用SockJS以兼容不支持WebSocket的浏览器
+     *
+     * @param registry STOMP端点注册器
+     */
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         // Endpoint for client to connect to WebSocket

@@ -1,35 +1,39 @@
 package com.edg.scheduler.controller;
 
-import com.edg.scheduler.model.OperationLog;
-import com.edg.scheduler.repository.OperationLogRepository;
+import com.edg.scheduler.service.LogService;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
-import java.util.Map;
 
 /**
  * 操作日志控制器
  *
- * 提供操作日志查询 API（需 ADMIN 权限）：
- * - 支持分页查询
- * - 支持按用户名查询
- * - 支持按角色查询
- * - 支持按时间范围查询
+ * 提供日志查询接口：
+ * - 分页查询：支持分页和大小参数
+ * - 条件筛选：按用户名、角色、时间范围过滤
  *
- * 日志由 OperationLogAspect 切面自动记录
+ * 日志记录由OperationLogAspect自动完成
  */
 @RestController
 @RequestMapping("/api/logs")
 public class LogController {
 
     @Autowired
-    private OperationLogRepository operationLogRepository;
+    private LogService logService;
 
+    /**
+     * 分页查询操作日志
+     *
+     * @param page 页码（默认0）
+     * @param size 每页大小（默认20）
+     * @param username 用户名过滤（可选）
+     * @param role 角色过滤（可选）
+     * @param startTime 开始时间（可选）
+     * @param endTime 结束时间（可选）
+     * @return 分页结果（包含content、total、pages）
+     */
     @GetMapping
     public ResponseEntity<?> getLogs(
             @RequestParam(defaultValue = "0") int page,
@@ -39,23 +43,6 @@ public class LogController {
             @RequestParam(required = false) LocalDateTime startTime,
             @RequestParam(required = false) LocalDateTime endTime) {
 
-        PageRequest pageRequest = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createTime"));
-        Page<OperationLog> result;
-
-        if (username != null && !username.isEmpty()) {
-            result = operationLogRepository.findByUsername(username, pageRequest);
-        } else if (role != null && !role.isEmpty()) {
-            result = operationLogRepository.findByRole(role, pageRequest);
-        } else if (startTime != null && endTime != null) {
-            result = operationLogRepository.findByCreateTimeBetween(startTime, endTime, pageRequest);
-        } else {
-            result = operationLogRepository.findAll(pageRequest);
-        }
-
-        return ResponseEntity.ok(Map.of(
-                "content", result.getContent(),
-                "total", result.getTotalElements(),
-                "pages", result.getTotalPages()
-        ));
+        return ResponseEntity.ok(logService.getLogs(page, size, username, role, startTime, endTime));
     }
 }

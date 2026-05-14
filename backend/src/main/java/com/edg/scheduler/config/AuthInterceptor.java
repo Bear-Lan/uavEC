@@ -11,6 +11,21 @@ import org.springframework.web.servlet.HandlerInterceptor;
 import java.util.Map;
 import java.util.Set;
 
+/**
+ * 认证拦截器
+ *
+ * 功能说明：
+ * - 验证请求令牌（X-Auth-Token）的有效性
+ * - 检查用户角色是否有权访问特定API路径
+ * - 跳过公开路径（登录、注册）
+ * - 将当前用户信息传递给Controller
+ *
+ * 权限映射：
+ * - ADMIN: 用户管理、日志查询、系统配置、节点管理、流量控制、指标导出
+ * - OPERATOR: 任务管理、节点查看、指标查看、系统状态
+ *
+ * 无需认证的路径：/api/auth/login, /api/auth/register
+ */
 @Component
 public class AuthInterceptor implements HandlerInterceptor {
 
@@ -45,6 +60,22 @@ public class AuthInterceptor implements HandlerInterceptor {
     @Autowired
     private OperatorRepository operatorRepository;
 
+    /**
+     * 验证请求是否可放行
+     *
+     * 功能说明：
+     * - 检查请求路径是否为公开路径
+     * - 验证X-Auth-Token请求头
+     * - 检查令牌有效性和过期时间
+     * - 验证用户角色权限
+     * - 将当前用户信息绑定到请求属性
+     *
+     * @param request HTTP请求
+     * @param response HTTP响应
+     * @param handler 处理器
+     * @return 是否放行
+     * @throws Exception 如果发生错误
+     */
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler)
             throws Exception {
@@ -86,10 +117,23 @@ public class AuthInterceptor implements HandlerInterceptor {
         return true;
     }
 
+    /**
+     * 检查路径是否为公开路径
+     *
+     * @param path 请求路径
+     * @return 是否为公开路径
+     */
     private boolean isPublicPath(String path) {
         return PUBLIC_PATHS.stream().anyMatch(path::startsWith);
     }
 
+    /**
+     * 检查角色是否有权访问路径
+     *
+     * @param role 用户角色
+     * @param path 请求路径
+     * @return 是否有权限
+     */
     private boolean hasPermission(String role, String path) {
         // ADMIN 拥有所有权限
         if ("ADMIN".equals(role)) {
@@ -106,6 +150,14 @@ public class AuthInterceptor implements HandlerInterceptor {
         return permissions.stream().anyMatch(path::startsWith);
     }
 
+    /**
+     * 发送错误响应
+     *
+     * @param response HTTP响应
+     * @param status HTTP状态码
+     * @param message 错误消息
+     * @throws Exception 如果发生错误
+     */
     private void sendError(HttpServletResponse response, int status, String message) throws Exception {
         response.setStatus(status);
         response.setContentType("application/json");

@@ -13,12 +13,17 @@ import org.springframework.security.crypto.password.PasswordEncoder;
  *
  * BCrypt 特点：
  * - 内置盐值，相同密码每次加密结果不同
- * - 迭代次数可配置，默认 10 轮
+ * - 迭代次数可配置，默认10轮
  * - 单向加密，不可解密
  */
 @Configuration
 public class SecurityConfig {
 
+    /**
+     * 创建密码编码器
+     *
+     * @return BCrypt密码编码器实例
+     */
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();

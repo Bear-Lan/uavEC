@@ -42,6 +42,25 @@ public class TrafficGeneratorService {
     private double customW2 = 0.5;
     private double customW3 = 0.5;
 
+    /**
+     * 启动泊松流量生成
+     *
+     * 功能描述：
+     * - 设置泊松分布参数lambda（每秒平均任务数）
+     * - 设置默认调度算法
+     * - 设置任务源的坐标位置
+     * - 设置自定义权重（用于CustomAlgorithm）
+     * - 激活流量生成开关
+     * - 推送启动通知到WebSocket
+     *
+     * @param lambda 泊松分布期望值（每秒任务数）
+     * @param algorithm 默认调度算法
+     * @param originX 任务来源X坐标
+     * @param originY 任务来源Y坐标
+     * @param w1 距离权重
+     * @param w2 CPU权重
+     * @param w3 电池权重
+     */
     public void startGeneration(double lambda, String algorithm, double originX, double originY, double w1, double w2,
             double w3) {
         this.lambda = lambda;
@@ -60,6 +79,13 @@ public class TrafficGeneratorService {
                 "{\"type\":\"TRAFFIC_GEN_STARTED\", \"message\":\"📡 启动随机流量注入, λ=" + lambda + "\"}");
     }
 
+    /**
+     * 停止泊松流量生成
+     *
+     * 功能描述：
+     * - 关闭流量生成开关
+     * - 推送停止通知到WebSocket
+     */
     public void stopGeneration() {
         this.isGenerating = false;
         log.info("Stopped Poisson Traffic Generation.");
@@ -67,17 +93,39 @@ public class TrafficGeneratorService {
                 "{\"type\":\"TRAFFIC_GEN_STOPPED\", \"message\":\"🛑 停止流量注入\"}");
     }
 
+    /**
+     * 获取流量生成状态
+     *
+     * @return 是否正在生成流量
+     */
     public boolean isStatusGenerating() {
         return this.isGenerating;
     }
 
+    /**
+     * 获取当前lambda值
+     *
+     * @return 泊松分布期望值
+     */
     public double getLambda() {
         return this.lambda;
     }
 
     /**
-     * 以 1 秒为时间槽 (Timeslot) 进行滴答，基于泊松过程生成本秒内的并发到达任务数 k。
-     * E(X) = Var(X) = λ
+     * 定时生成泊松流量
+     *
+     * 功能描述：
+     * - 每秒执行一次（@Scheduled(fixedRate = 1000)）
+     * - 使用Knuth算法生成泊松分布随机数k
+     * - 生成k个随机任务，每个任务使用蒙特卡洛采样设置参数
+     * - 任务类型分布：60% IMAGE_PROCESSING，30% SENSOR_DATA，10% VIDEO_ANALYSIS
+     * - 任务坐标在原点附近±5单位范围内随机浮动
+     * - 所有任务属于同一批次（batchId）
+     *
+     * 任务参数采样：
+     * - IMAGE_PROCESSING: CPU 0.5-1.5，数据量 20-50MB
+     * - SENSOR_DATA: CPU 0.2，数据量 5-15MB
+     * - VIDEO_ANALYSIS: CPU 2.0-4.0，数据量 100-500MB
      */
     @Scheduled(fixedRate = 1000)
     public void generateTrafficTick() {
@@ -129,8 +177,15 @@ public class TrafficGeneratorService {
     }
 
     /**
-     * 泊松分布随机数生成算法 (Knuth)
-     * e^(-λ) * λ^k / k!
+     * Knuth算法生成泊松分布随机数
+     *
+     * 数学原理：
+     * - 泊松分布：P(X=k) = (λ^k * e^(-λ)) / k!
+     * - 算法：产生均匀随机数p，累乘直到p小于e^(-λ)
+     * - 返回累乘次数k即为泊松随机变量
+     *
+     * @param lambda 泊松分布期望值
+     * @return 泊松分布随机数k（k >= 0）
      */
     private int getPoissonRandom(double lambda) {
         double L = Math.exp(-lambda);

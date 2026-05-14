@@ -5,42 +5,39 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * 用户数据传输对象（DTO）
+ * 用户数据传输对象
  *
- * 用于 API 响应中返回用户信息，脱敏处理（不包含密码和 Token）
+ * 用于前后端数据交换的用户信息载体：
+ * - 包含id, username, role, enabled等业务字段
+ * - 包含x, y坐标用于地图展示
+ * - 包含lastLoginTime, createdTime用于审计
+ * - 提供fromEntity静态方法将Operator实体转换为DTO
  */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 public class UserDTO {
-    /** 用户唯一标识 */
     private String id;
 
-    /** 用户名 */
     private String username;
 
-    /** 角色（ADMIN/OPERATOR）*/
     private String role;
 
-    /** 账户启用状态 */
     private boolean enabled;
 
-    /** 坐标 X */
     private double x;
 
-    /** 坐标 Y */
     private double y;
 
-    /** 最后登录时间戳 */
     private long lastLoginTime;
 
-    /** 账户创建时间戳 */
     private long createdTime;
 
     /**
-     * 从 Operator 实体转换为 DTO
+     * 将Operator实体转换为UserDTO
+     *
      * @param operator 操作员实体
-     * @return UserDTO 或 null（如果 operator 为空）
+     * @return 用户DTO（如果实体为null则返回null）
      */
     public static UserDTO fromEntity(Operator operator) {
         if (operator == null)

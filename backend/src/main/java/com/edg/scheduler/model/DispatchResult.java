@@ -7,29 +7,31 @@ import lombok.NoArgsConstructor;
 /**
  * 任务分发结果数据传输对象
  *
- * 用于返回任务调度决策结果，包含成功/失败状态、消息、任务信息和分配的节点ID
+ * 表示任务调度决策的结果：
+ * - success: 分发是否成功
+ * - message: 结果描述信息
+ * - task: 关联的任务对象
+ * - assignedNodeId: 分配的节点ID（可能为CLOUD-SERVER）
+ * - 提供success/fail工厂方法
  */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 public class DispatchResult {
-    /** 分发是否成功 */
     private boolean success;
 
-    /** 结果消息 */
     private String message;
 
-    /** 关联的任务信息 */
     private TaskInfo task;
 
-    /** 分配的节点ID（如 CLOUD-SERVER 表示云端）*/
     private String assignedNodeId;
 
     /**
      * 创建成功结果
-     * @param task 任务信息
+     *
+     * @param task 关联任务
      * @param nodeId 分配的节点ID
-     * @return 成功结果
+     * @return 成功结果对象
      */
     public static DispatchResult success(TaskInfo task, String nodeId) {
         return new DispatchResult(true, "Task dispatched successfully", task, nodeId);
@@ -37,9 +39,10 @@ public class DispatchResult {
 
     /**
      * 创建失败结果
-     * @param task 任务信息
+     *
+     * @param task 关联任务
      * @param message 失败原因
-     * @return 失败结果
+     * @return 失败结果对象
      */
     public static DispatchResult fail(TaskInfo task, String message) {
         return new DispatchResult(false, message, task, null);

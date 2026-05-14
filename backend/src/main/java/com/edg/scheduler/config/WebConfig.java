@@ -21,6 +21,16 @@ public class WebConfig implements WebMvcConfigurer {
     @Autowired
     private AuthInterceptor authInterceptor;
 
+    /**
+     * 注册拦截器
+     *
+     * 功能说明：
+     * - 注册AuthInterceptor到Spring MVC
+     * - 拦截所有/api/**路径
+     * - 排除登录注册公开路径
+     *
+     * @param registry 拦截器注册表
+     */
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(authInterceptor)

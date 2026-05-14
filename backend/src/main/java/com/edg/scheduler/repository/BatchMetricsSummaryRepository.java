@@ -9,24 +9,30 @@ import java.util.List;
 /**
  * 批次性能指标汇总数据访问层
  *
- * 提供批次性能指标（BatchMetricsSummary）实体的数据库操作方法
+ * 继承JpaRepository，提供批次指标汇总（BatchMetricsSummary）实体的数据库操作：
+ * - findTop100ByOrderByCreatedAtDesc: 获取最近100条批次指标（用于历史展示）
+ * - findAllByOrderByCreatedAtAsc: 按时间升序获取全部批次指标（用于导出）
+ * - existsByBatchId: 判断批次是否已存在（防止重复统计）
  */
 @Repository
 public interface BatchMetricsSummaryRepository extends JpaRepository<BatchMetricsSummary, String> {
     /**
-     * 获取最近 100 条性能指标记录（按创建时间倒序）
-     * @return 性能指标列表
+     * 获取最近100条批次指标（按创建时间降序）
+     *
+     * @return 批次指标列表
      */
     List<BatchMetricsSummary> findTop100ByOrderByCreatedAtDesc();
 
     /**
-     * 获取所有性能指标记录（按创建时间升序）
-     * @return 性能指标列表
+     * 按时间升序获取全部批次指标
+     *
+     * @return 批次指标列表
      */
     List<BatchMetricsSummary> findAllByOrderByCreatedAtAsc();
 
     /**
-     * 检查指定批次是否已存在性能指标记录
+     * 判断批次是否已存在
+     *
      * @param batchId 批次ID
      * @return 是否存在
      */

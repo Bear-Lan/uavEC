@@ -13,6 +13,12 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * - 多算法调度策略支持（Greedy/WFQ/Geo/Custom）
  * - 操作日志与性能指标采集
  *
+ * 技术栈：
+ * - Spring Boot 3.x
+ * - Spring Data JPA
+ * - Redisson（分布式锁、队列）
+ * - WebSocket（STOMP协议）
+ *
  * @author EDG Team
  * @version 1.1.0-CYBER
  */

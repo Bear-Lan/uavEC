@@ -54,6 +54,24 @@ public class TaskService {
     @Autowired
     private DispatchService dispatchService;
 
+    /**
+     * 提交任务到调度队列
+     *
+     * 功能描述：
+     * - 为任务生成唯一ID（如果未提供）
+     * - 自动生成任务名称（格式：操作员-年月日时分秒-任务ID前4位）
+     * - 设置任务提交时间和初始状态为QUEUED
+     * - 将任务持久化到MySQL数据库
+     * - 创建任务追踪日志（TaskTraceLog）
+     * - 根据优先级将任务插入Redisson分布式队列
+     *
+     * 队列优先级策略：
+     * - 高优先级任务（priority >= 4）插入队首，实现"插队"效果
+     * - 普通任务追加至队尾
+     *
+     * @param task 待提交的任务对象
+     * @return 任务ID
+     */
     @Transactional
     public String submitTask(TaskInfo task) {
         if (task.getId() == null) {
@@ -92,6 +110,21 @@ public class TaskService {
         return task.getId();
     }
 
+    /**
+     * 定时处理任务队列
+     *
+     * 功能描述：
+     * - 每500毫秒执行一次（@Scheduled(fixedDelay = 500)）
+     * - 每次最多处理10个任务
+     * - 从Redisson分布式队列头部取出任务
+     * - 更新任务状态为DISPATCHING
+     * - 调用DispatchService分发任务到最优节点
+     * - 分发失败时将任务重新放回队列头部
+     *
+     * 追踪日志更新：
+     * - 记录出队时间（dequeuedTime）
+     * - 计算队列等待延迟（queueLatency）
+     */
     @Scheduled(fixedDelay = 500)
     public void processTaskQueue() {
         // 每次最多从队列头消费 10 个周期任务，显著拔高系统吞吐力上限
@@ -132,8 +165,20 @@ public class TaskService {
     private org.springframework.messaging.simp.SimpMessagingTemplate messagingTemplate;
 
     /**
-     * 阶段 5 架构: 单点故障容错演练 (Fault Tolerance)
-     * 系统将会拉取、剔除掉所有挂载在已经坠毁 (Failed) 无人机节点上的半路活跃任务并引发全部重排。
+     * 节点故障恢复 - 重新排队活跃任务
+     *
+     * 功能描述：
+     * - 当节点坠毁（battery耗尽或被手动下线）时调用
+     * - 查询该节点上所有处于RUNNING或DISPATCHING状态的任务
+     * - 将这些任务状态重置为QUEUED，分配节点置为null
+     * - 将任务重新添加到分布式队列
+     * - 向前端推送故障恢复通知（FAULT_RECOVERY）
+     *
+     * 使用场景：
+     * - 节点电池耗尽坠毁时触发
+     * - 节点被手动下线时触发
+     *
+     * @param nodeId 故障节点ID
      */
     @Transactional
     public void requeueActiveTasksForNode(String nodeId) {
@@ -167,8 +212,20 @@ public class TaskService {
     }
 
     /**
-     * 迁移指定节点上的所有活跃边缘计算任务。
-     * 当无人机进入 RTH (返航充电) 模式时触发，以防止任务因充电过程而超时。
+     * RTH返航模式 - 任务主动迁移
+     *
+     * 功能描述：
+     * - 当无人机进入RTH（Return-To-Home）返航模式时调用
+     * - 防止任务因无人机返航充电而长时间阻塞超时
+     * - 尝试将任务迁移到其他在线且有足够资源的邻居节点
+     * - 如果找不到合适的邻居节点，则将任务重排到全局队列并提升为高优先级
+     *
+     * 迁移策略：
+     * - 优先查找有足够CPU和内存的在线邻居节点
+     * - 迁移成功时更新资源分配和新节点ID
+     * - 迁移失败时将任务设为高优先级重新排队
+     *
+     * @param nodeId 进入返航模式的节点ID
      */
     @Transactional
     public void migrateTasksFromNode(String nodeId) {
@@ -231,8 +288,25 @@ public class TaskService {
     }
 
     /**
-     * 阶段 6 架构: 动态工作窃取算法调度机制 (Work Stealing Algorithm)
-     * 系统扫描轮询时，极度空闲的边缘计算节点将会自发去拦截并“窃取”邻近因故障积压死锁节点的阻塞任务队列。
+     * 工作窃取轮询器
+     *
+     * 功能描述：
+     * - 每2秒执行一次（@Scheduled(fixedDelay = 2000)）
+     * - 实现负载均衡的Work Stealing算法
+     * - 查找空闲节点（activeTasksCount == 0）
+     * - 从负载过重的节点（activeTasksCount >= 2）窃取任务
+     * - 每个周期最多执行一次工作窃取，防止雪崩
+     *
+     * 窃取条件：
+     * - 源节点：在线、非RTH模式、活跃任务数>=2
+     * - 目标节点：在线、非RTH模式、活跃任务数==0
+     * - 任务状态：必须为RUNNING_EDGE
+     *
+     * 窃取后处理：
+     * - 更新任务的assignedUavId为空闲节点
+     * - 调整源节点和目标节点的资源分配
+     * - 更新追踪日志的节点信息
+     * - 推送工作窃取通知到前端
      */
     @Scheduled(fixedDelay = 2000)
     public void workStealingPoller() {
@@ -296,6 +370,20 @@ public class TaskService {
         }
     }
 
+    /**
+     * 回滚所有活跃任务 - 用于集群快照恢复
+     *
+     * 功能描述：
+     * - 获取Redis中所有活跃任务（task:active）
+     * - 释放这些任务在对应节点上占用的资源
+     * - 将任务状态重置为QUEUED，清除分配节点
+     * - 从活跃映射中移除任务，加入分布式队列
+     * - 推送回滚通知到前端
+     *
+     * 使用场景：
+     * - 集群快照回滚（restoreSnapshot）时调用
+     * - 确保回滚后节点状态与任务状态一致
+     */
     @Transactional
     public void requeueAllActiveTasks() {
         RMap<String, TaskInfo> activeMap = redissonClient.getMap("task:active");

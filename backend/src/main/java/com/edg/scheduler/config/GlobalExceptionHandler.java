@@ -15,16 +15,22 @@ import java.util.Map;
  * 全局异常处理器
  *
  * 统一处理系统中的各类异常：
- * - Exception: 通用异常，返回 500 状态码
- * - IllegalArgumentException: 参数异常，返回 400 状态码
- * - MethodArgumentNotValidException: 参数校验异常，返回 422 状态码（含详细字段错误）
+ * - Exception: 通用异常，返回500状态码
+ * - IllegalArgumentException: 参数异常，返回400状态码
+ * - MethodArgumentNotValidException: 参数校验异常，返回422状态码（含详细字段错误）
  *
- * 异常日志使用 Slf4j 记录，便于问题追踪
+ * 异常日志使用Slf4j记录，便于问题追踪
  */
 @Slf4j
 @ControllerAdvice
 public class GlobalExceptionHandler {
 
+    /**
+     * 处理通用异常
+     *
+     * @param e 异常对象
+     * @return 500状态的错误响应
+     */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleException(Exception e) {
         log.error("Unhandled exception caught in GlobalExceptionHandler", e);
@@ -34,6 +40,12 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(error, HttpStatus.INTERNAL_SERVER_ERROR);
     }
 
+    /**
+     * 处理参数异常
+     *
+     * @param e 参数异常
+     * @return 400状态的错误响应
+     */
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, Object>> handleIllegalArgumentException(IllegalArgumentException e) {
         log.warn("Illegal argument exception: {}", e.getMessage());
@@ -43,6 +55,12 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
     }
 
+    /**
+     * 处理参数校验异常
+     *
+     * @param ex 校验异常
+     * @return 400状态的错误响应（包含详细字段错误）
+     */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, Object>> handleValidationExceptions(MethodArgumentNotValidException ex) {
         Map<String, String> errors = new HashMap<>();

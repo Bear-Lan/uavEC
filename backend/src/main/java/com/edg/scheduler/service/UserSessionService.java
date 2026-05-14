@@ -40,13 +40,32 @@ public class UserSessionService {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    /**
+     * 初始化用户会话服务
+     *
+     * 功能描述：
+     * - @PostConstruct生命周期钩子
+     * - 在Spring容器初始化完成后执行
+     * - 用于确认Redis连接就绪
+     */
     @PostConstruct
     public void init() {
         log.info("UserSessionService initialized with Redis");
     }
 
     /**
-     * 用户上线：记录到 Redis 在线用户集合，并广播更新
+     * 用户登录上线
+     *
+     * 功能描述：
+     * - 创建用户在线信息（包含用户名、登录时间、坐标）
+     * - 从数据库获取用户的坐标信息
+     * - 在Redis中移除该用户的旧记录（如果存在）
+     * - 将新记录添加到Redis在线用户集合
+     * - 广播更新后的在线用户列表到WebSocket
+     *
+     * 存储格式：Redis Set，元素为JSON序列化的OnlineUserInfo
+     *
+     * @param username 用户名
      */
     public void userLogin(String username) {
         OnlineUserInfo info = new OnlineUserInfo();
@@ -83,7 +102,13 @@ public class UserSessionService {
     }
 
     /**
-     * 用户下线：从 Redis 在线用户集合移除，并广播更新
+     * 用户登出下线
+     *
+     * 功能描述：
+     * - 从Redis在线用户集合中移除该用户
+     * - 广播更新后的在线用户列表到WebSocket
+     *
+     * @param username 用户名
      */
     public void userLogout(String username) {
         RSet<String> onlineSet = redissonClient.getSet(ONLINE_USERS_KEY);
@@ -102,6 +127,8 @@ public class UserSessionService {
 
     /**
      * 获取所有在线用户列表
+     *
+     * @return 在线用户信息列表
      */
     public List<OnlineUserInfo> getOnlineUsers() {
         List<OnlineUserInfo> result = new ArrayList<>();
@@ -119,7 +146,11 @@ public class UserSessionService {
     }
 
     /**
-     * 广播在线用户列表到 /topic/users
+     * 广播在线用户列表
+     *
+     * 功能描述：
+     * - 获取当前所有在线用户
+     * - 推送到WebSocket的/topic/users主题
      */
     public void broadcastOnlineUsers() {
         List<OnlineUserInfo> users = getOnlineUsers();
