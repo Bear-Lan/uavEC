@@ -60,6 +60,16 @@
               <el-input-number v-model="taskForm.requiredMemory" :min="64" :max="8192" :step="64" style="width: 100%" />
             </el-form-item>
 
+            <el-form-item label="任务优先级" class="cyber-form-item">
+              <el-select v-model="taskForm.priority" style="width: 100%">
+                <el-option label="1级 (低)" :value="1" />
+                <el-option label="2级 (普通)" :value="2" />
+                <el-option label="3级 (普通)" :value="3" />
+                <el-option label="4级 (高)-可插队" :value="4" />
+                <el-option label="5级 (紧急)-可插队" :value="5" />
+              </el-select>
+            </el-form-item>
+
             <el-form-item label="边缘卸载算法" class="cyber-form-item">
               <el-select v-model="taskForm.offloadAlgorithm" placeholder="选择卸载评判算法" style="width: 100%">
                 <el-option label="最低延迟优先 (Latency)" value="latency" />
@@ -586,10 +596,6 @@ const submitTasks = async () => {
           t.customW1 = taskForm.value.customW1
           t.customW2 = taskForm.value.customW2
           t.customW3 = taskForm.value.customW3
-      }
-      if (batchCount.value > 1) {
-        t.originX = Math.max(0, Math.min(100, (t.originX || 50) + (Math.random()*10 - 5)))
-        t.originY = Math.max(0, Math.min(100, (t.originY || 50) + (Math.random()*10 - 5)))
       }
       tasks.push(t)
     }

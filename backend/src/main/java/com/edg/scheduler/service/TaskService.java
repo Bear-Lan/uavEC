@@ -92,6 +92,7 @@ public class TaskService {
 
         // 初始化细粒度的底层执行流水日志 (Trace Log)
         TaskTraceLog traceLog = new TaskTraceLog();
+        traceLog.setId(task.getTaskName());
         traceLog.setTaskId(task.getId());
         traceLog.setCreatedTime(System.currentTimeMillis());
         traceLogRepository.save(traceLog);
@@ -100,13 +101,11 @@ public class TaskService {
         org.redisson.api.RDeque<TaskInfo> queue = redissonClient.getDeque(TASK_QUEUE_KEY);
         if (task.getPriority() >= 4) {
             queue.addFirst(task);
-            log.info("Task {} (priority={}) submitted with HEAD priority to Redisson queue", task.getId(),
-                    task.getPriority());
+            log.info("任务 {} (优先级={}) 以高优先级插入队列头部", task.getTaskName(), task.getPriority());
         } else {
             queue.addLast(task);
-            log.info("Task {} (priority={}) submitted to Redisson queue", task.getId(), task.getPriority());
+            log.info("任务 {} (优先级={}) 加入队列尾部", task.getTaskName(), task.getPriority());
         }
-
         return task.getId();
     }
 
@@ -136,7 +135,7 @@ public class TaskService {
             if (task == null)
                 break;
 
-            log.info("Processing task {} from Redisson queue", task.getId());
+            log.info("从Redis队列取出任务 {}", task.getTaskName());
 
             // 瀑布流追踪检查点 2: 出队完毕 -> 即将调遣 (Dequeued -> Dispatching)
             TaskTraceLog traceLog = traceLogRepository.findByTaskId(task.getId());
@@ -155,7 +154,7 @@ public class TaskService {
             if (result.isSuccess()) {
                 taskRepository.save(task);
             } else {
-                log.warn("Dispatch failed for task {}: {}. Requeuing.", task.getId(), result.getMessage());
+                log.warn("任务 {} 分发失败: {}，重新放回队列", task.getTaskName(), result.getMessage());
                 queue.addFirst(task);
             }
         }

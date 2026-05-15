@@ -121,70 +121,72 @@ public class DispatchService {
      */
     @Transactional
     public DispatchResult dispatch(TaskInfo task) {
-        // 单个任务的算法覆盖设定，如无则回退使用全局配置算法
+        // ---------- 1. 确定调度算法 ----------
+        // 优先使用任务自己设定的调度算法，否则使用全局配置的默认算法
         String effectiveAlgorithm = (task.getSchedulingAlgorithm() != null && !task.getSchedulingAlgorithm().isBlank())
                 ? task.getSchedulingAlgorithm()
                 : algorithm;
 
+        // ---------- 2. 过滤可用节点 ----------
+        // 必须同时满足：节点在线、CPU充足、内存充足
         List<UAVNode> availableNodes = nodeService.getAllNodes().stream()
                 .filter(UAVNode::isOnline)
                 .filter(n -> n.getMaxCpu() >= task.getRequiredCpu()
                         && n.getMaxMemory() >= task.getRequiredMemory())
                 .toList();
 
+        // 无可用节点时，直接降级到云端执行
         if (availableNodes.isEmpty()) {
-            log.warn("Task {} (Req CPU: {}, Req Mem: {}) exceeds maximum hardware limits of all UAVs.",
-                    task.getId(), task.getRequiredCpu(), task.getRequiredMemory());
-            return executeCloudFallback(task, "Task exceeds max hardware limits");
+            log.warn("任务 {} 所需资源(CPU:{}, 内存:{})超过所有无人机上限，切换到云端执行",
+                    task.getTaskName(), task.getRequiredCpu(), task.getRequiredMemory());
+            return executeCloudFallback(task, "任务所需资源超过所有无人机上限");
         }
 
+        // ---------- 3. 选择最优节点 ----------
         SchedulingAlgorithm algo = algorithms.get(effectiveAlgorithm.toLowerCase());
         UAVNode selectedNode;
 
         if (algo != null) {
+            // 根据调度算法（greedy/wfq/geo/custom）选择最优节点
             selectedNode = algo.selectNode(availableNodes, task);
         } else {
+            // 算法未找到时，默认选择第一个可用节点
             selectedNode = availableNodes.get(0);
         }
 
         if (selectedNode == null) {
-            return DispatchResult.fail(task, "No suitable UAV found");
+            return DispatchResult.fail(task, "未找到合适的无人机节点");
         }
 
-        // --- 卸载决策逻辑 (Offload Decision Logic) ---
-        // 任务被指派给了 'selectedNode'。现在该无人机要自己评估：
-        // 是进行本地计算，还是卸载 (offload) 到边缘服务器/云端。
+        // ---------- 4. 卸载决策逻辑 ----------
+        // 决定任务是在边缘节点执行还是卸载到云端
         boolean offloadToCloud = false;
+        // 卸载算法优先级：任务设定 > 默认latency
         String offloadAlg = task.getOffloadAlgorithm() != null ? task.getOffloadAlgorithm() : "latency";
 
+        // 计算任务原点到无人机的欧几里得距离
         double distance = calculateDistance(selectedNode.getX(), selectedNode.getY(), task.getOriginX(),
                 task.getOriginY());
 
-        // --- Optimization 2: Shannon Capacity Bandwidth Model ---
-        // EffectiveBandwidth = BaseBW * log2(1 + SNR)
-        // SNR degrades quadratically with distance.
+        // ---- Shannon信道容量模型计算有效带宽 ----
+        // 有效带宽 = 基带带宽 × log2(1+SNR)，SNR随距离平方衰减
         double baseBandwidthMBps = selectedNode.getNetworkBandwidth() / 8.0;
         double pathLossMultiplier = Math.pow(Math.max(1.0, distance / 10.0), 2);
-        double snr = 100.0 / pathLossMultiplier; // Base SNR of 100 at close range
-        double shannonFactor = Math.log(1 + snr) / Math.log(2); // log2(1 + SNR)
-
-        // Normalize factor to not exceed base capacity
+        double snr = 100.0 / pathLossMultiplier; // 近距离基准SNR=100
+        double shannonFactor = Math.log(1 + snr) / Math.log(2); // log2(1+SNR)
         double maxFactor = Math.log(1 + 100.0) / Math.log(2);
         double effectiveBandwidthMBps = baseBandwidthMBps * (shannonFactor / maxFactor);
+        effectiveBandwidthMBps = Math.max(0.5, effectiveBandwidthMBps); // 最小带宽兜底
 
-        // Ensure minimum fallback bandwidth
-        effectiveBandwidthMBps = Math.max(0.5, effectiveBandwidthMBps);
-
-        // --- Optimization 3: Historical Prediction ---
-        // Predict local execution time dynamically from historical trace logs if
-        // available
-        double localTimeStrPredict = (task.getDataSize() / selectedNode.getMaxCpu()) * 0.1; // Base math fallback
+        // ---- 历史预测：根据历史执行日志预测本地执行时间 ----
+        double localTimeStrPredict = (task.getDataSize() / selectedNode.getMaxCpu()) * 0.1; // 默认估算
         List<TaskTraceLog> historyLogs = traceLogRepository
                 .findTop10ByTaskNameOrderByExecutionEndTimeDesc(task.getTaskName());
 
         double avgHistoricalComputeMs = 0;
         int validLogs = 0;
         for (TaskTraceLog logEntry : historyLogs) {
+            // 只使用有效的边缘节点执行日志
             if (logEntry.getComputeLatency() > 0
                     && logEntry.getAssignedUavId() != null && logEntry.getAssignedUavId().startsWith("UAV")) {
                 avgHistoricalComputeMs += logEntry.getComputeLatency();
@@ -193,90 +195,84 @@ public class DispatchService {
         }
 
         if (validLogs > 0) {
+            // 有历史数据时，使用历史平均值预测
             double avgMs = avgHistoricalComputeMs / validLogs;
-            localTimeStrPredict = avgMs / 1000.0; // Convert to seconds
-            log.info("Task {}: Using historical prediction for local execution time: {} s", task.getId(),
-                    String.format("%.3f", localTimeStrPredict));
+            localTimeStrPredict = avgMs / 1000.0;
+            log.info("任务 {}: 使用历史预测本地执行时间: {}秒", task.getTaskName(), String.format("%.3f", localTimeStrPredict));
         }
 
+        // ---- 根据卸载算法做决策 ----
         if ("energy".equalsIgnoreCase(offloadAlg)) {
-            // 能耗感知 (Energy-Aware): 计算 本地计算综合能耗 vs 传输发信能耗
-            double localPower = 5.0; // 瓦特 (Watts)
+            // 能耗感知策略：比较本地计算能耗 vs 传输能耗
+            double localPower = 5.0; // 本地计算功率 (W)
             double localEnergy = localPower * localTimeStrPredict;
 
-            double baseTxPower = 2.0; // 理想传输情况下的射频功率 (Watts)
+            double baseTxPower = 2.0; // 传输功率 (W)
             double txPower = baseTxPower * pathLossMultiplier;
-
             double txTime = task.getDataSize() / effectiveBandwidthMBps;
             double offloadEnergy = txPower * txTime;
 
-            log.info("Task {}: Energy eval - Local: {} J, Offload: {} J (Distance: {}, Multiplier: {})",
-                    task.getId(), String.format("%.2f", localEnergy), String.format("%.2f", offloadEnergy),
+            log.info("任务 {}: 能耗评估 - 本地:{}J vs 传输:{}J (距离:{}, 衰减:{})",
+                    task.getTaskName(), String.format("%.2f", localEnergy), String.format("%.2f", offloadEnergy),
                     String.format("%.2f", distance), String.format("%.2f", pathLossMultiplier));
 
-            // 如果本地计算太耗电，或者电池容量已不足，则卸载到云端。
-            // 增大了惩罚系数以鼓励尽可能本地执行，并为触发工作窃取 (work stealing) 创造条件
+            // 本地能耗过高或电池不足时，卸载到云端
             if (localEnergy > offloadEnergy * 5.0 || selectedNode.getBattery() < 20.0) {
                 offloadToCloud = true;
             }
         } else if ("latency".equalsIgnoreCase(offloadAlg)) {
-            // 延迟最优 (Latency-Optimal): 对比 边缘端(本地)执行时间 和 云端执行总耗时
-            // 使用 Shannon 模型估算有效带宽，再计算云端总耗时
-            double txTime = task.getDataSize() / effectiveBandwidthMBps; // 传输到云端的耗时（秒）
-            // 云端执行时间：数据量 / (云端核心数 * 每核处理速度)，原型假设每核处理速度约为 1 MB/ms
-            double cloudExecutionTime = (task.getDataSize() / cloudCpuCores) * 0.1; // 秒 (sec)
-            // 广域网延迟和云端排队惩罚使用配置值（毫秒转秒）
+            // 延迟最优策略：比较本地执行时间 vs 云端总耗时
+            // 云端总耗时 = 传输时间 + 云端计算时间 + 广域网延迟 + 排队惩罚
+            double txTime = task.getDataSize() / effectiveBandwidthMBps; // 传输到云端耗时
+            double cloudExecutionTime = (task.getDataSize() / cloudCpuCores) * 0.1; // 云端计算耗时
             double totalOffloadTime = txTime + cloudExecutionTime + (wanLatencyMs / 1000.0) + (cloudQueuePenaltyMs / 1000.0);
 
-            log.info("Task {}: Latency eval - Local (Predicted): {} s, Offload to Cloud: {} s (Effective BW: {} MB/s)",
-                    task.getId(), String.format("%.3f", localTimeStrPredict), String.format("%.3f", totalOffloadTime),
+            log.info("任务 {}: 延迟评估 - 本地(预测):{}秒 vs 云端:{}秒 (有效带宽:{}MB/s)",
+                    task.getTaskName(), String.format("%.3f", localTimeStrPredict), String.format("%.3f", totalOffloadTime),
                     String.format("%.1f", effectiveBandwidthMBps));
 
             if (totalOffloadTime < localTimeStrPredict) {
                 offloadToCloud = true;
             }
         } else {
-            // 阈值退避逻辑 (Threshold Fallback) - 只有携带极大数据的任务才强制卸载到云端。
-            // 允许 CPU 密集型任务在边缘端局部排队，从而触发“工作窃取机制” (Work-Stealing)!
+            // 阈值策略：数据量超过500MB时强制卸载到云端
             offloadToCloud = task.getDataSize() > 500;
         }
 
-        // --- Optimization 4: Partial Offloading (Task Splitting) ---
+        // ---------- 5. 分割卸载（数据量超过阈值时） ----------
+        // 大数据量任务（>200MB）采用分割执行：边缘处理30%，云端处理70%
         boolean partialOffload = task.getDataSize() > partialThresholdMb;
 
         if (partialOffload) {
-            log.info("Task {} matches criteria for PARTIAL OFFLOAD (Size: {} MB, Threshold: {} MB). Splitting {}% Edge, {}% Cloud.",
-                    task.getId(), task.getDataSize(), partialThresholdMb,
+            log.info("任务 {} 触发分割卸载(数据量:{}MB > 阈值:{}MB)，分割比例:边缘{}% 云端{}%",
+                    task.getTaskName(), task.getDataSize(), partialThresholdMb,
                     (int)(partialEdgeRatio * 100), (int)((1 - partialEdgeRatio) * 100));
 
-            // We assume local node can allocate full requested CPU for the task duration,
-            // but duration is shorter
             if (selectedNode != null
                     && nodeService.allocate(selectedNode.getId(), task.getRequiredCpu(), task.getRequiredMemory())) {
                 task.setAssignedUavId(selectedNode.getId() + " & CLOUD");
                 task.setStatus("RUNNING_SPLIT");
                 task.setStartTime(System.currentTimeMillis());
 
+                // 数据分割
                 double localData = task.getDataSize() * partialEdgeRatio;
                 double cloudData = task.getDataSize() * (1 - partialEdgeRatio);
 
-                // Edge processing time
+                // 边缘处理时间 = 本地计算 + 传输延迟
                 long localExecutionMs = (long) ((localData / selectedNode.getMaxCpu()) * 100);
                 long transmissionDelay = (long) (distance * distanceDelayMsPerUnit);
                 long totalEdgeTime = localExecutionMs + transmissionDelay;
 
-                // Cloud processing time: realistic estimation using Shannon model
-                // cloudData (MB) / cloudBandwidth (MB/s) = cloudTxTime (s) * 1000 = ms
+                // 云端处理时间 = 传输时间 + 计算时间 + 广域网延迟
                 long cloudTxMs = (long) ((cloudData / cloudBandwidthMbps) * 1000);
-                // Cloud execution: cloudData (MB) / (cloudCpuCores * perCorePerf) * 100ms
-                // Approximation: cloudCpuCores = 64, per-core performance ~1 MB/ms => cloudData/64*100 ms
                 long cloudComputeMs = (long) ((cloudData / cloudCpuCores) * 100);
                 long wanLatencyDelay = (long) wanLatencyMs;
                 long totalCloudTime = cloudTxMs + cloudComputeMs + wanLatencyDelay;
 
-                // Since they run concurrently, the bottleneck is the maximum of the two
+                // 任务耗时取边缘和云端的最大值（并行执行）
                 long bottleneckDelay = Math.max(totalEdgeTime, totalCloudTime);
 
+                // 更新追踪日志
                 TaskTraceLog traceLog = traceLogRepository.findByTaskId(task.getId());
                 if (traceLog != null) {
                     traceLog.setAssignedUavId(selectedNode.getId() + " & CLOUD");
@@ -291,22 +287,22 @@ public class DispatchService {
 
                 final String assignNodeId = selectedNode.getId();
 
+                // 异步执行分割任务
                 CompletableFuture.runAsync(() -> {
                     try {
                         Thread.sleep(bottleneckDelay);
                         task.setStatus("COMPLETED");
                         task.setEndTime(System.currentTimeMillis());
 
-                        // Energy: Local compute energy + Cloud transmission energy
+                        // 能耗 = 本地计算能耗 + 云端传输能耗
                         double computingPower = 5.0;
                         double localEnergy = computingPower * (localExecutionMs / 1000.0);
-
                         double baseTxPower = 2.0;
                         double txPower = baseTxPower * pathLossMultiplier;
                         double cloudTxEnergy = txPower * (cloudTxMs / 1000.0);
-
                         task.setActualEnergyUsed(localEnergy + cloudTxEnergy);
 
+                        // 更新追踪日志
                         if (traceLog != null) {
                             long now = System.currentTimeMillis();
                             traceLog.setExecutionEndTime(now);
@@ -326,17 +322,20 @@ public class DispatchService {
                 });
                 return DispatchResult.success(task, task.getAssignedUavId());
             } else {
-                return executeCloudFallback(task, "Edge allocation failed during Partial Offload setup");
+                return executeCloudFallback(task, "分割卸载时边缘节点资源分配失败");
             }
         } else if (offloadToCloud) {
-            log.info("Task {} offloaded to Remote Cloud Server via {} due to '{}' algorithm",
-                    task.getId(), selectedNode.getId(), offloadAlg);
+            // ---------- 6. 完全卸载到云端 ----------
+            log.info("任务 {} 根据 '{}' 算法决策卸载到云端(经过节点{})",
+                    task.getTaskName(), offloadAlg, selectedNode.getId());
             task.setAssignedUavId("CLOUD-SERVER");
             task.setStatus("RUNNING_CLOUD");
             task.setStartTime(System.currentTimeMillis());
 
-            long transmissionDelay = (long) ((task.getDataSize() / cloudBandwidthMbps) * 1000) + (long) wanLatencyMs; // 毫秒 (含广域网延迟)
+            // 传输延迟 = 数据传输时间 + 广域网延迟
+            long transmissionDelay = (long) ((task.getDataSize() / cloudBandwidthMbps) * 1000) + (long) wanLatencyMs;
 
+            // 更新追踪日志
             TaskTraceLog traceLog = traceLogRepository.findByTaskId(task.getId());
             if (traceLog != null) {
                 traceLog.setAssignedUavId("CLOUD-SERVER");
@@ -347,9 +346,9 @@ public class DispatchService {
             }
 
             broadcastState();
-            broadcastTaskUpdate(task); // 广播任务 DISPATCHED 状态
+            broadcastTaskUpdate(task);
 
-            // 在云端异步执行计算 (不占用无人机硬件资源)
+            // 云端异步执行（不占用无人机资源）
             CompletableFuture.runAsync(() -> {
                 try {
                     long cloudExecutionMs = (long) ((task.getDataSize() / cloudCpuCores) * 100);
@@ -357,17 +356,18 @@ public class DispatchService {
                     task.setStatus("COMPLETED");
                     task.setEndTime(System.currentTimeMillis());
 
+                    // 云端执行：无人机仅计算传输能耗
+                    double txPower = 2.0;
+                    double txTime = task.getDataSize() / cloudBandwidthMbps;
+                    task.setActualEnergyUsed(txPower * txTime);
+
+                    // 更新追踪日志
                     if (traceLog != null) {
                         long now = System.currentTimeMillis();
                         traceLog.setExecutionEndTime(now);
                         traceLog.setComputeLatency(now - traceLog.getExecutionStartTime());
                         traceLogRepository.save(traceLog);
                     }
-
-                    // 阶段 6 遥感数据: 即便云端算力宏大，对于无人机端而言其计算能耗成本记为 0，仅计算传输发信耗电
-                    double txPower = 2.0; // 瓦特 (Watts)
-                    double txTime = task.getDataSize() / cloudBandwidthMbps; // 传输耗时 (秒)
-                    task.setActualEnergyUsed(txPower * txTime);
                 } catch (InterruptedException e) {
                     task.setStatus("FAILED");
                 } finally {
@@ -380,24 +380,24 @@ public class DispatchService {
             return DispatchResult.success(task, "CLOUD-SERVER");
         }
 
+        // ---------- 7. 边缘节点执行（默认） ----------
         if (selectedNode != null
                 && nodeService.allocate(selectedNode.getId(), task.getRequiredCpu(), task.getRequiredMemory())) {
             task.setAssignedUavId(selectedNode.getId());
             task.setStatus("RUNNING_EDGE");
             task.setStartTime(System.currentTimeMillis());
 
-            // 将正在执行的任务注册到活跃运行表 (Distributed Active Map)
+            // 注册到活跃任务表
             redissonClient.getMap("task:active").put(task.getId(), task);
 
-            log.info("Task {} dispatched to Node {} using algorithm {}", task.getId(), selectedNode.getId(),
-                    effectiveAlgorithm);
+            log.info("任务 {} 使用 {} 算法分发到节点 {}", task.getTaskName(), effectiveAlgorithm, selectedNode.getId());
 
-            // 根据欧式距离计算增加物理传输延迟
+            // 根据欧式距离计算传输延迟
             distance = calculateDistance(selectedNode.getX(), selectedNode.getY(), task.getOriginX(),
                     task.getOriginY());
-            long transmissionDelay = (long) (distance * distanceDelayMsPerUnit); // 每个距离单位折算 configurable ms
-            log.info("Task {} transmission delay: {}ms (Distance: {}, {}ms/unit)", task.getId(), transmissionDelay,
-                    String.format("%.2f", distance), distanceDelayMsPerUnit);
+            long transmissionDelay = (long) (distance * distanceDelayMsPerUnit);
+            log.info("任务 {} 传输延迟: {}毫秒 (距离:{}, 每单位延迟:{}ms)",
+                    task.getTaskName(), transmissionDelay, String.format("%.2f", distance), distanceDelayMsPerUnit);
 
             TaskTraceLog traceLog = traceLogRepository.findByTaskId(task.getId());
             if (traceLog != null) {
@@ -410,16 +410,17 @@ public class DispatchService {
 
             // 广播状态更新
             broadcastState();
-            broadcastTaskUpdate(task); // 广播任务 DISPATCHED 状态
+            broadcastTaskUpdate(task);
 
-            // 异步模拟执行过程
+            // 异步模拟边缘执行
             simulateExecution(task, selectedNode, transmissionDelay);
 
             return DispatchResult.success(task, selectedNode.getId());
         }
 
-        // --- Tier-3 云服务器退避降级 (Cloud Server Fallback) ---
-        return executeCloudFallback(task, "Edge allocation failed for all candidate nodes");
+        // ---------- 8. 降级到云端（边缘节点分配失败） ----------
+        log.warn("任务 {} 所有边缘节点分配失败，降级到云端执行", task.getTaskName());
+        return executeCloudFallback(task, "边缘节点资源分配失败");
     }
 
     /**
@@ -519,7 +520,7 @@ public class DispatchService {
 
                 // --- 重要: 状态栅栏 (Status Gate) ---
                 // 在完成模拟睡眠后，核对数据库中该任务的状态。
-                // 如果任务已被迁移 (MIGRATED) 或 因节点坠毁而重排 (QUEUED)，则此“幽灵进程”必须终止，不得篡改状态。
+                // 如果任务已被迁移 (MIGRATED) 或 因节点坠毁而重排 (QUEUED)，则此"幽灵进程"必须终止，不得篡改状态。
                 TaskInfo latestTaskCheck = taskRepository.findById(task.getId()).orElse(null);
                 if (latestTaskCheck == null || !"RUNNING_EDGE".equals(latestTaskCheck.getStatus())) {
                     log.warn("Simulation for task {} aborted. Task status in DB is '{}', current thread is stale.",
@@ -569,7 +570,7 @@ public class DispatchService {
                 // 向 MySQL 落盘更新特定任务数据状态
                 TaskInfo finalCheck = taskRepository.findById(task.getId()).orElse(task);
 
-                // 仅当任务仍处于“运行/分发”类状态时才进行归檔；防止覆盖已“迁移/重排”的最新状态
+                // 仅当任务仍处于"运行/分发"类状态时才进行归檔；防止覆盖已"迁移/重排"的最新状态
                 if (finalCheck.getStatus() != null && finalCheck.getStatus().startsWith("RUNNING")) {
                     taskRepository.save(task);
                 }
@@ -577,7 +578,7 @@ public class DispatchService {
                 // 从活跃字典中移除
                 redissonClient.getMap("task:active").remove(task.getId());
 
-                // 重新派生查询，以防该任务在进行至中途时，已经被其他饥饿的可用节点“窃取”接盘 (Work-Stealing)!
+                // 重新派生查询，以防该任务在进行至中途时，已经被其他饥饿的可用节点"窃取"接盘 (Work-Stealing)!
                 String actualNodeId = finalCheck.getAssignedUavId();
                 if (actualNodeId == null || !actualNodeId.startsWith("UAV")) {
                     actualNodeId = node.getId(); // 如果发生诡异覆盖则降级回初始登记节点
