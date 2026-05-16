@@ -165,6 +165,9 @@ public class TaskService {
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }
+                task.setStatus("QUEUED");
+                task.setAssignedUavId(null);
+                taskRepository.save(task);  // 同步数据库状态
                 queue.addFirst(task);
             }
         }
