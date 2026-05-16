@@ -6,7 +6,7 @@ import lombok.Data;
  * 卸载决策结果
  *
  * 包含卸载决策的各种属性：
- * - decision: LOCAL / EDGE / CLOUD / PARTIAL
+ * - decision: EDGE / CLOUD / PARTIAL（无LOCAL，本系统只有边缘和云端）
  * - edgeRatio: 部分卸载时边缘处理比例（0.0-1.0）
  * - cloudRatio: 部分卸载时云端处理比例
  * - reason: 决策原因描述
@@ -17,8 +17,7 @@ import lombok.Data;
 public class OffloadResult {
 
     public enum Decision {
-        LOCAL,     // 本地执行
-        EDGE,      // 边缘执行
+        EDGE,      // 边缘执行（无人机）
         CLOUD,     // 云端执行
         PARTIAL    // 部分卸载（边缘+云端）
     }
@@ -29,15 +28,6 @@ public class OffloadResult {
     private String reason;
     private double estimatedLatency;
     private double estimatedEnergy;
-
-    public static OffloadResult local(String reason, double latency, double energy) {
-        OffloadResult result = new OffloadResult();
-        result.setDecision(Decision.LOCAL);
-        result.setReason(reason);
-        result.setEstimatedLatency(latency);
-        result.setEstimatedEnergy(energy);
-        return result;
-    }
 
     public static OffloadResult edge(String reason, double latency, double energy) {
         OffloadResult result = new OffloadResult();
@@ -69,8 +59,8 @@ public class OffloadResult {
         return result;
     }
 
-    public boolean isLocalOrEdge() {
-        return decision == Decision.LOCAL || decision == Decision.EDGE;
+    public boolean isEdge() {
+        return decision == Decision.EDGE;
     }
 
     public boolean isCloudOrPartial() {

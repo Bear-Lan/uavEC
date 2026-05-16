@@ -14,7 +14,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * 使用简化的 DQN 模型进行卸载决策：
  * - 状态空间: [taskDataSize, taskPriority, nodeBattery, nodeCpuAvailable, cloudLambda, cloudMu]
- * - 动作空间: [LOCAL, EDGE, CLOUD, PARTIAL]
+ * - 动作空间: [EDGE, CLOUD, PARTIAL]
  * - 奖励: 基于延迟和能耗的加权组合
  *
  * 实现说明：
