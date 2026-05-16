@@ -18,6 +18,7 @@ export interface TaskInfo {
     originX?: number
     originY?: number
     batchId?: string
+    operatorName?: string
     customW1?: number
     customW2?: number
     customW3?: number

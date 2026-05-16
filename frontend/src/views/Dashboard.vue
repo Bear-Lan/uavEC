@@ -72,8 +72,10 @@
 
             <el-form-item label="边缘卸载算法" class="cyber-form-item">
               <el-select v-model="taskForm.offloadAlgorithm" placeholder="选择卸载评判算法" style="width: 100%">
-                <el-option label="最低延迟优先 (Latency)" value="latency" />
-                <el-option label="最低能耗优先 (Energy)" value="energy" />
+                <el-option label="延迟最优 (M/M/1排队)" value="latency" />
+                <el-option label="能耗最优 (DVFS)" value="energy" />
+                <el-option label="自适应部分卸载" value="adaptive" />
+                <el-option label="深度强化学习 (DQN)" value="dqn" />
               </el-select>
             </el-form-item>
 
