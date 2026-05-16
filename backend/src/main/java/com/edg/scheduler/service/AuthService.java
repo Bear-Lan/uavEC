@@ -55,7 +55,7 @@ public class AuthService {
         }
         Operator operator = new Operator(username, passwordEncoder.encode(password), x, y);
         operatorRepository.save(operator);
-        log.info("New user registered: {}", username);
+        log.info("新用户已注册: {}", username);
         return UserDTO.fromEntity(operator);
     }
 
@@ -85,7 +85,7 @@ public class AuthService {
 
         userSessionService.userLogin(username);
 
-        log.info("User {} logged in", username);
+        log.info("用户 {} 已登录", username);
         return Map.of("user", UserDTO.fromEntity(operator), "token", token);
     }
 
@@ -123,7 +123,7 @@ public class AuthService {
         existing.setX(x);
         existing.setY(y);
         operatorRepository.save(existing);
-        log.info("Profile updated for user: {}", currentUsername);
+        log.info("用户资料已更新: {}", currentUsername);
         return UserDTO.fromEntity(existing);
     }
 
@@ -138,7 +138,7 @@ public class AuthService {
             Operator admin = new Operator("admin", passwordEncoder.encode(defaultPassword), 50, 50);
             admin.setRole("ADMIN");
             operatorRepository.save(admin);
-            log.info("Default admin user initialized");
+            log.info("默认管理员用户已初始化");
             return defaultPassword;
         }
         return null;

@@ -50,7 +50,7 @@ public class UserSessionService {
      */
     @PostConstruct
     public void init() {
-        log.info("UserSessionService initialized with Redis");
+        log.info("UserSessionService 初始化完成，Redis连接就绪");
     }
 
     /**
@@ -93,11 +93,11 @@ public class UserSessionService {
         try {
             onlineSet.add(objectMapper.writeValueAsString(info));
         } catch (JsonProcessingException e) {
-            log.error("Failed to serialize OnlineUserInfo for user {}", username, e);
+            log.error("序列化OnlineUserInfo失败: user={}", username, e);
             return;
         }
 
-        log.info("User {} logged in, broadcasting to /topic/users", username);
+        log.info("用户 {} 登录上线，广播到 /topic/users", username);
         broadcastOnlineUsers();
     }
 
@@ -118,7 +118,7 @@ public class UserSessionService {
                 OnlineUserInfo existing = objectMapper.readValue(json, OnlineUserInfo.class);
                 return existing.getUsername().equals(username);
             } catch (Exception e) {
-                log.error("Failed to parse OnlineUserInfo during logout: {}", json, e);
+                log.error("登出时解析OnlineUserInfo失败: json={}", json, e);
                 return false;
             }
         });

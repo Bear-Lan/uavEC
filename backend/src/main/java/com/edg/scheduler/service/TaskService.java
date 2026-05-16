@@ -185,7 +185,7 @@ public class TaskService {
      */
     @Transactional
     public void requeueActiveTasksForNode(String nodeId) {
-        log.warn("Initiating recovery for node {}. Finding active tasks...", nodeId);
+        log.warn("正在恢复节点 {}. 搜寻活跃任务中...", nodeId);
         java.util.List<TaskInfo> strandedTasks = taskRepository.findByAssignedUavId(nodeId);
 
         int recovered = 0;
@@ -198,10 +198,10 @@ public class TaskService {
 
                 redissonClient.getDeque(TASK_QUEUE_KEY).addLast(task);
                 recovered++;
-                log.info("Recovered Task {} from fallen node {}", task.getId(), nodeId);
+                log.info("从宕机节点 {} 恢复任务 {}", task.getId(), nodeId);
             }
         }
-        log.info("Recovery complete for node {}. {} tasks requeued.", nodeId, recovered);
+        log.info("节点 {} 恢复完成. {} 个任务已重新排队.", nodeId, recovered);
 
         // 向前端总线推送紧急降级流转面板信息
         if (recovered > 0) {
@@ -232,7 +232,7 @@ public class TaskService {
      */
     @Transactional
     public void migrateTasksFromNode(String nodeId) {
-        log.info("RTH MIGRATION: Initiating proactive migration for node {}...", nodeId);
+        log.info("RTH返航迁移: 开始为节点 {} 执行主动迁移...", nodeId);
         java.util.List<TaskInfo> activeTasks = taskRepository.findByAssignedUavId(nodeId);
 
         int migrated = 0;
@@ -255,7 +255,7 @@ public class TaskService {
                             task.setAssignedUavId(neighbor.getId());
                             taskRepository.save(task);
 
-                            log.info("RTH MIGRATION: Task {} migrated from {} to neighbor {}",
+                            log.info("RTH返航迁移: 任务 {} 从 {} 迁移到邻居节点 {}",
                                     task.getId(), nodeId, neighbor.getId());
 
                             migrated++;
@@ -275,7 +275,7 @@ public class TaskService {
 
                     redissonClient.getDeque(TASK_QUEUE_KEY).addFirst(task);
                     requeued++;
-                    log.info("RTH MIGRATION: No neighbor for Task {}, forced requeue with high priority.",
+                    log.info("RTH返航迁移: 未找到任务 {} 的邻居节点，强制高优先级重排队.",
                             task.getId());
                 }
             }
@@ -338,8 +338,8 @@ public class TaskService {
                                         nodeService.allocate(idleNode.getId(), task.getRequiredCpu(),
                                                 task.getRequiredMemory());
 
-                                        log.info("WORK STEALING: Idle {} stole Task {} from overloaded {}",
-                                                idleNode.getId(), task.getId(), busyNode.getId());
+                                        log.info("工作窃取: 闲置节点 {} 从负载节点 {} 窃取任务 {}",
+                                                idleNode.getId(), busyNode.getId(), task.getId());
 
                                         // 追平修补底层信道链路流转细节 (Trace Log)
                                         TaskTraceLog traceLog = traceLogRepository.findByTaskId(task.getId());
@@ -365,7 +365,7 @@ public class TaskService {
                                 }
                             }
                         } catch (Exception e) {
-                            log.error("Work stealing error", e);
+                            log.error("工作窃取发生错误", e);
                         }
                     }
                 }

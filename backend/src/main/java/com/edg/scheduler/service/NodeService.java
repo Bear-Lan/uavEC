@@ -163,7 +163,7 @@ public class NodeService {
             applyHardwareProfile(node, nextId);
             nodes.put(id, node);
         }
-        log.info("Initialized {} heterogeneous UAV nodes", initialNodeCount);
+        log.info("已初始化 {} 个异构无人机节点", initialNodeCount);
     }
 
     /**
@@ -189,7 +189,7 @@ public class NodeService {
             UAVNode newNode = new UAVNode(id, "UAV Node " + nextId, maxCpu);
             applyHardwareProfile(newNode, nextId);
             nodes.put(id, newNode);
-            log.info("Dynamically added new UAV node: {} (profile: {})", id, newNode.getHardwareProfile());
+            log.info("动态新增无人机节点: {} (配置: {})", id, newNode.getHardwareProfile());
             messagingTemplate.convertAndSend("/topic/nodes", getAllNodes());
             return newNode;
         } finally {
@@ -216,7 +216,7 @@ public class NodeService {
             lock.lock(5, TimeUnit.SECONDS);
             if (nodes.containsKey(nodeId)) {
                 nodes.remove(nodeId);
-                log.info("Dynamically removed UAV node: {}", nodeId);
+                log.info("动态删除无人机节点: {}", nodeId);
                 taskService.requeueActiveTasksForNode(nodeId);
                 messagingTemplate.convertAndSend("/topic/nodes", getAllNodes());
                 return true;
@@ -248,7 +248,7 @@ public class NodeService {
             node.setRthMode(false);
             node.setCharging(false);
             node.setManualOverride(false); // 解除锚定锁定，恢复自动巡逻
-            log.info("Emergency Override: {} battery replenished to 100%", nodeId);
+            log.info("紧急充电: {} 电池已充至 100%", nodeId);
             messagingTemplate.convertAndSend("/topic/nodes", getAllNodes());
         }
     }
@@ -275,7 +275,7 @@ public class NodeService {
             for (Map.Entry<String, UAVNode> entry : nodes.entrySet()) {
                 snapshotNodes.put(entry.getKey(), new UAVNode(entry.getValue()));
             }
-            log.info("Created cluster snapshot with {} nodes.", snapshotNodes.size());
+            log.info("已创建集群快照, 节点数: {}.", snapshotNodes.size());
         } finally {
             if (lock.isHeldByCurrentThread()) {
                 lock.unlock();
@@ -301,7 +301,7 @@ public class NodeService {
         try {
             lock.lock(5, TimeUnit.SECONDS);
             if (snapshotNodes.isEmpty()) {
-                log.warn("Attempted to restore snapshot, but snapshot was empty.");
+                log.warn("尝试恢复快照，但快照为空.");
                 return;
             }
             nodes.clear();
@@ -310,7 +310,7 @@ public class NodeService {
             }
             // Clear current task assignments from tasks in Redis queue
             taskService.requeueAllActiveTasks();
-            log.info("Restored cluster state from snapshot.");
+            log.info("已从快照恢复集群状态.");
             messagingTemplate.convertAndSend("/topic/nodes", getAllNodes());
         } finally {
             if (lock.isHeldByCurrentThread()) {
@@ -356,7 +356,7 @@ public class NodeService {
         RLock lock = redissonClient.getLock("node:alloc:" + nodeId);
         try {
             if (!lock.tryLock(3, 5, TimeUnit.SECONDS)) {
-                log.warn("Could not acquire Redisson lock for node {} allocation", nodeId);
+                log.warn("无法获取节点 {} 分配的Redisson锁", nodeId);
                 return false;
             }
             UAVNode node = nodes.get(nodeId);
@@ -462,7 +462,7 @@ public class NodeService {
                             node.setCharging(false);
                             node.setOnline(true);
                             node.setManualOverride(false); // 重置标志位，令其重新进入航线巡逻
-                            log.info("{} completed charging and is returning to active duty on patrol.", node.getId());
+                            log.info("{} 完成充电，正在返回巡逻任务.", node.getId());
                         }
                     }
                     changed = true;
@@ -518,14 +518,14 @@ public class NodeService {
 
                 node.setBattery(Math.max(0, Math.min(100.0, node.getBattery() - totalDrain + solarGain)));
                 if (solarGain > 0) {
-                    log.debug("[SOLAR] {} harvested {:.2f}% energy from solar panels", node.getId(), solarGain);
+                    log.debug("[光伏] {} 从太阳能面板获取了 {:.2f}% 电量", node.getId(), solarGain);
                 }
 
                 // 根据阈值自动触发紧急返航 (RTH Auto-Trigger)
                 if (node.getBattery() <= rthThreshold && node.isOnline()) {
                     node.setOnline(false); // 停止接收来自调度器的新派发订单
                     node.setRthMode(true);
-                    log.warn("{} reached critical battery ({}%). Initiating Return-To-Home (RTH) sequence.",
+                    log.warn("{} 电池电量达到临界值 ({}%). 正在启动返航 (RTH) 程序.",
                             node.getId(), rthThreshold);
 
                     // 触发任务主动迁移，防止任务长时间阻塞在返航无人机上
@@ -534,7 +534,7 @@ public class NodeService {
 
                 // 彻底断电，模拟无人机空中坠毁 (Auto offline if completely dead)
                 if (node.getBattery() <= 0 && node.isOnline()) { // Only trigger if currently online
-                    log.error("{} battery completely dead. Crashed.", node.getId());
+                    log.error("{} 电池完全耗尽. 坠毁.", node.getId());
                     node.setRthMode(false);
                     node.setCharging(false);
                     node.setOnline(false); // Make it offline first to stop further allocations
@@ -584,7 +584,7 @@ public class NodeService {
         if (node != null) {
             node.setOnline(online);
             if (!online) {
-                log.warn("Fault Injection: {} taken offline!", nodeId);
+                log.warn("故障注入: {} 已下线!", nodeId);
                 taskService.requeueActiveTasksForNode(nodeId);
                 node.setActiveTasksCount(new java.util.concurrent.atomic.AtomicInteger(0));
                 node.setCurrentCpuUsage(0.0);
@@ -593,7 +593,7 @@ public class NodeService {
                 node.setBattery(100.0);
                 node.setRthMode(false);
                 node.setCharging(false);
-                log.info("Recovery: {} brought online with full battery.", nodeId);
+                log.info("恢复: {} 已上线，电池已充满.", nodeId);
             }
             messagingTemplate.convertAndSend("/topic/nodes", getAllNodes());
         }
@@ -622,7 +622,7 @@ public class NodeService {
                 node.setMaxMemory(maxMemory);
             if (networkBandwidth != null)
                 node.setNetworkBandwidth(networkBandwidth);
-            log.info("Node {} config updated: CPU={}, RAM={}, BW={}", nodeId, maxCpu, maxMemory, networkBandwidth);
+            log.info("节点 {} 配置已更新: CPU={}, RAM={}, BW={}", nodeId, maxCpu, maxMemory, networkBandwidth);
             messagingTemplate.convertAndSend("/topic/nodes", getAllNodes());
             return node;
         }

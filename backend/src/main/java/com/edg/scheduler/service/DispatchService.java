@@ -64,6 +64,9 @@ public class DispatchService {
     @Autowired
     private UAVSimulationService uavSimulationService;
 
+    @Autowired
+    private CloudSimulationService cloudSimulationService;
+
     private final Map<String, SchedulingAlgorithm> algorithms;
     private final Map<String, OffloadingStrategy> offloadingStrategies;
 
@@ -268,10 +271,13 @@ public class DispatchService {
 
         final String assignNodeId = selectedNode.getId();
 
-        // 异步执行分割任务
+        // 将云端部分提交到云端仿真服务
+        cloudSimulationService.enqueueTask(task);
+
+        // 异步执行分割任务（等待边缘完成）
         CompletableFuture.runAsync(() -> {
             try {
-                Thread.sleep(bottleneckDelay);
+                Thread.sleep(totalEdgeTime);
                 task.setStatus("COMPLETED");
                 task.setEndTime(System.currentTimeMillis());
 
@@ -338,7 +344,7 @@ public class DispatchService {
             // 投递任务到 UAV worker 线程执行
             boolean enqueued = uavSimulationService.enqueueTask(selectedNode.getId(), task);
             if (!enqueued) {
-                log.warn("UAV {} task queue full, falling back to async simulation", selectedNode.getId());
+                log.warn("UAV {} 任务队列已满，降级到异步模拟", selectedNode.getId());
                 simulateExecution(task, selectedNode, transmissionDelay);
             }
         } else {
@@ -363,7 +369,7 @@ public class DispatchService {
      * @return 分发结果
      */
     private DispatchResult executeCloudFallback(TaskInfo task, String reason) {
-        log.info("Task {} falling back to CLOUD-SERVER. Reason: {}", task.getId(), reason);
+        log.info("任务 {} 降级到CLOUD-SERVER执行. 原因: {}", task.getId(), reason);
         task.setAssignedUavId("CLOUD-SERVER");
         task.setStatus("RUNNING_CLOUD");
         task.setStartTime(System.currentTimeMillis());
@@ -379,34 +385,11 @@ public class DispatchService {
             traceLogRepository.save(fallbackTrace);
         }
 
+        // 投递到云端仿真服务处理
+        cloudSimulationService.enqueueTask(task);
+
         broadcastState();
         broadcastTaskUpdate(task); // 广播任务 DISPATCHED 状态
-
-        CompletableFuture.runAsync(() -> {
-            try {
-                long cloudExecMs = (long) ((task.getDataSize() / cloudCpuCores) * 100);
-                Thread.sleep(Math.max(1500, cloudExecMs) + fallbackTxDelay);
-                task.setStatus("COMPLETED");
-                task.setEndTime(System.currentTimeMillis());
-                double txPower = 2.0;
-                double txTime = task.getDataSize() / cloudBandwidthMbps;
-                task.setActualEnergyUsed(txPower * txTime);
-
-                if (fallbackTrace != null) {
-                    long now = System.currentTimeMillis();
-                    fallbackTrace.setExecutionEndTime(now);
-                    fallbackTrace.setComputeLatency(now - fallbackTrace.getExecutionStartTime());
-                    traceLogRepository.save(fallbackTrace);
-                }
-            } catch (InterruptedException e) {
-                task.setStatus("FAILED");
-            } finally {
-                taskRepository.save(task);
-                redissonClient.getMap("task:active").remove(task.getId());
-                broadcastState();
-                broadcastTaskUpdate(task);
-            }
-        });
 
         return DispatchResult.success(task, "CLOUD-SERVER (Fallback)");
     }
@@ -448,8 +431,8 @@ public class DispatchService {
                 // 如果任务已被迁移 (MIGRATED) 或 因节点坠毁而重排 (QUEUED)，则此"幽灵进程"必须终止，不得篡改状态。
                 TaskInfo latestTaskCheck = taskRepository.findById(task.getId()).orElse(null);
                 if (latestTaskCheck == null || !"RUNNING_EDGE".equals(latestTaskCheck.getStatus())) {
-                    log.warn("Simulation for task {} aborted. Task status in DB is '{}', current thread is stale.",
-                            task.getId(), (latestTaskCheck != null ? latestTaskCheck.getStatus() : "DELETED"));
+                    log.warn("任务 {} 模拟中止. 数据库状态='{}'，当前线程已过时",
+                            task.getId(), (latestTaskCheck != null ? latestTaskCheck.getStatus() : "已删除"));
                     return;
                 }
 
@@ -469,7 +452,7 @@ public class DispatchService {
                     traceLogRepository.save(traceLog);
                 }
 
-                log.info("Task {} completed on Node {} (Energy: {} J)", task.getId(), node.getId(),
+                log.info("任务 {} 在节点 {} 上完成 (能耗: {} J)", task.getId(), node.getId(),
                         String.format("%.2f", task.getActualEnergyUsed()));
 
             } catch (InterruptedException e) {
@@ -489,7 +472,7 @@ public class DispatchService {
                     traceLogRepository.save(traceLog);
                 }
 
-                log.error("Task {} FAILED on Node {} (Sunk Energy: {} J)", task.getId(), node.getId(),
+                log.error("任务 {} 在节点 {} 上失败 (沉没能耗: {} J)", task.getId(), node.getId(),
                         String.format("%.2f", task.getActualEnergyUsed()), e);
             } finally {
                 // 向 MySQL 落盘更新特定任务数据状态
@@ -526,14 +509,13 @@ public class DispatchService {
         status.setAvailableCpu(cloudCpuCores);
         status.setBandwidthMbps(cloudBandwidthMbps);
 
-        // 可以从 Redisson 或数据库获取实际的队列长度等信息
+        // 从 Redisson 获取实际的队列长度等信息
         Object queueLen = redissonClient.getMap("cloud:stats").get("queueLength");
         if (queueLen != null) {
             status.setQueueLength((Integer) queueLen);
             // 估算实际到达率 = 队列长度 / 观察窗口
             status.setLambda(Math.min(5.0, status.getQueueLength() * 0.1));
         }
-
         return status;
     }
 

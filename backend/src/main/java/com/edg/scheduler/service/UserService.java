@@ -53,7 +53,7 @@ public class UserService {
                 .map(u -> {
                     u.setEnabled(enabled);
                     operatorRepository.save(u);
-                    log.info("User {} status updated: enabled={}", id, enabled);
+                    log.info("用户 {} 状态已更新: enabled={}", id, enabled);
                     return UserDTO.fromEntity(u);
                 })
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + id));
@@ -68,7 +68,7 @@ public class UserService {
     public boolean deleteUser(String id) {
         if (operatorRepository.existsById(id)) {
             operatorRepository.deleteById(id);
-            log.info("User deleted: {}", id);
+            log.info("用户已删除: {}", id);
             return true;
         }
         return false;

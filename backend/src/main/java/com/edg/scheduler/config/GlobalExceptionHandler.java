@@ -33,7 +33,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleException(Exception e) {
-        log.error("Unhandled exception caught in GlobalExceptionHandler", e);
+        log.error("GlobalExceptionHandler 捕获到未处理异常", e);
         Map<String, Object> error = new HashMap<>();
         error.put("success", false);
         error.put("message", "Internal Server Error: " + e.getMessage());
@@ -48,7 +48,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, Object>> handleIllegalArgumentException(IllegalArgumentException e) {
-        log.warn("Illegal argument exception: {}", e.getMessage());
+        log.warn("非法参数异常: {}", e.getMessage());
         Map<String, Object> error = new HashMap<>();
         error.put("success", false);
         error.put("message", "Bad Request: " + e.getMessage());
@@ -70,7 +70,7 @@ public class GlobalExceptionHandler {
             errors.put(fieldName, errorMessage);
         });
 
-        log.warn("Validation errors: {}", errors);
+        log.warn("校验错误: {}", errors);
         Map<String, Object> response = new HashMap<>();
         response.put("success", false);
         response.put("message", "Validation Failed");

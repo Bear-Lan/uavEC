@@ -80,7 +80,7 @@ public class DQNOffloadingStrategy implements OffloadingStrategy {
 
     @PostConstruct
     public void init() {
-        log.info("DQN Offloading Strategy initialized with epsilon: {:.3f}", epsilon);
+        log.info("DQN卸载策略初始化完成, epsilon: {:.3f}", epsilon);
     }
 
     /**

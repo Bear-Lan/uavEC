@@ -68,7 +68,7 @@ public class UAVSimulationService {
     @PostConstruct
     public void init() {
         if (!uavThreadEnabled) {
-            log.info("UAV simulation threads disabled, using legacy async simulation");
+            log.info("UAV仿真线程已禁用，使用旧版异步模拟");
             return;
         }
 
@@ -83,7 +83,7 @@ public class UAVSimulationService {
             createWorkerForNode(node.getId());
         }
 
-        log.info("UAVSimulationService initialized with {} workers", workers.size());
+        log.info("UAVSimulationService 初始化完成, workers={}", workers.size());
     }
 
     /**
@@ -103,7 +103,7 @@ public class UAVSimulationService {
         workers.put(nodeId, worker);
 
         workerExecutor.execute(worker);
-        log.info("Created UAV worker thread for {}", nodeId);
+        log.info("已为节点 {} 创建 UAV worker 线程", nodeId);
     }
 
     /**
@@ -116,7 +116,7 @@ public class UAVSimulationService {
         }
         workers.remove(nodeId);
         taskQueues.remove(nodeId);
-        log.info("Stopped UAV worker thread for {}", nodeId);
+        log.info("已停止节点 {} 的 UAV worker 线程", nodeId);
     }
 
     /**
@@ -133,7 +133,7 @@ public class UAVSimulationService {
 
         BlockingQueue<TaskInfo> queue = taskQueues.get(nodeId);
         if (queue == null) {
-            log.warn("No task queue found for UAV {}, creating worker", nodeId);
+            log.warn("未找到节点 {} 的任务队列，正在创建", nodeId);
             createWorkerForNode(nodeId);
             queue = taskQueues.get(nodeId);
         }
@@ -169,7 +169,7 @@ public class UAVSimulationService {
 
         @Override
         public void run() {
-            log.info("UAV worker {} started", nodeId);
+            log.info("UAV worker {} 已启动", nodeId);
 
             while (running.get()) {
                 try {
@@ -185,11 +185,11 @@ public class UAVSimulationService {
                     Thread.currentThread().interrupt();
                     break;
                 } catch (Exception e) {
-                    log.error("UAV worker {} encountered error", nodeId, e);
+                    log.error("UAV worker {} 遇到错误", nodeId, e);
                 }
             }
 
-            log.info("UAV worker {} stopped", nodeId);
+            log.info("UAV worker {} 已停止", nodeId);
         }
 
         /**
@@ -198,11 +198,11 @@ public class UAVSimulationService {
         private void executeTask(TaskInfo task) {
             UAVNode node = nodeService.getNode(nodeId);
             if (node == null) {
-                log.warn("UAV {} not found for task execution", nodeId);
+                log.warn("未找到节点 {} 用于任务执行", nodeId);
                 return;
             }
 
-            log.info("UAV {} executing task {}", nodeId, task.getId());
+            log.info("UAV {} 正在执行任务 {}", nodeId, task.getId());
 
             // 计算传输延迟
             double distance = calculateDistance(node.getX(), node.getY(), task.getOriginX(), task.getOriginY());
@@ -224,7 +224,7 @@ public class UAVSimulationService {
             // 状态栅栏检查
             TaskInfo latestTask = taskRepository.findById(task.getId()).orElse(null);
             if (latestTask == null || !"RUNNING_EDGE".equals(latestTask.getStatus())) {
-                log.warn("Task {} status changed during execution, aborting completion", task.getId());
+                log.warn("任务 {} 在执行期间状态已变更，中止完成处理", task.getId());
                 return;
             }
 
@@ -249,7 +249,7 @@ public class UAVSimulationService {
             redissonClient.getMap("task:active").remove(task.getId());
             nodeService.release(nodeId, task.getRequiredCpu(), task.getRequiredMemory());
 
-            log.info("UAV {} completed task {} (Energy: {} J)", nodeId, task.getId(),
+            log.info("UAV {} 已完成任务 {} (能耗: {} J)", nodeId, task.getId(),
                     String.format("%.2f", task.getActualEnergyUsed()));
 
             // 广播状态更新
@@ -272,7 +272,7 @@ public class UAVSimulationService {
 
     @PreDestroy
     public void shutdown() {
-        log.info("Shutting down UAVSimulationService...");
+        log.info("正在关闭 UAVSimulationService...");
         for (AtomicBoolean running : workerRunning.values()) {
             running.set(false);
         }
@@ -290,6 +290,6 @@ public class UAVSimulationService {
 
         workers.clear();
         taskQueues.clear();
-        log.info("UAVSimulationService shutdown complete");
+        log.info("UAVSimulationService 关闭完成");
     }
 }

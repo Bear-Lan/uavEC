@@ -73,7 +73,7 @@ public class TrafficGeneratorService {
         this.customW2 = w2;
         this.customW3 = w3;
         this.isGenerating = true;
-        log.info("Started Poisson Traffic Generation. Lambda = {} tasks/sec, Algorithm = {}", lambda,
+        log.info("泊松流量生成已启动. Lambda = {} 任务/秒, 算法 = {}", lambda,
                 this.defaultAlgorithm);
         messagingTemplate.convertAndSend("/topic/notifications",
                 "{\"type\":\"TRAFFIC_GEN_STARTED\", \"message\":\"📡 启动随机流量注入, λ=" + lambda + "\"}");
@@ -88,7 +88,7 @@ public class TrafficGeneratorService {
      */
     public void stopGeneration() {
         this.isGenerating = false;
-        log.info("Stopped Poisson Traffic Generation.");
+        log.info("泊松流量生成已停止.");
         messagingTemplate.convertAndSend("/topic/notifications",
                 "{\"type\":\"TRAFFIC_GEN_STOPPED\", \"message\":\"🛑 停止流量注入\"}");
     }
@@ -137,7 +137,7 @@ public class TrafficGeneratorService {
         int k = getPoissonRandom(this.lambda);
 
         if (k > 0) {
-            log.info("Poisson Tick: Generating {} tasks in this slot...", k);
+            log.info("泊松Tick: 本次生成 {} 个任务...", k);
             String batchId = "POISSON-" + System.currentTimeMillis();
 
             for (int i = 0; i < k; i++) {
