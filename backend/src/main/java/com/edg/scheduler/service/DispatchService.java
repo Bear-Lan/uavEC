@@ -115,44 +115,27 @@ public class DispatchService {
     private boolean uavThreadEnabled;
 
     /**
-     * 分发任务到最优节点
+     * 任务分发入口
      *
-     * 功能描述：
-     * - 根据任务调度算法选择最优节点
-     * - 执行卸载决策（threshold/energy/latency）
-     * - 支持部分卸载（大任务分割处理）
-     * - 支持云端降级处理
-     * - 异步执行任务并记录追踪日志
+     * 执行流程（6步）：
+     * 1. 过滤可用节点（在线、资源充足、电量充足）
+     * 2. 若无可用节点 → 直接云端降级
+     * 3. 获取卸载策略（latency/energy/adaptive/dqn）
+     * 4. 使用卸载策略评估 → 决策 CLOUD / PARTIAL / EDGE
+     * 5. 若为 CLOUD → 云端执行（无需调度算法）
+     * 6. 若为 PARTIAL/EDGE → 用调度算法选节点，再执行
      *
-     * 决策流程：
-     * 1. 过滤可用节点（在线且资源充足）
-     * 2. 使用调度算法选择最优节点
-     * 3. 根据offloadAlgorithm决定是否卸载到云端
-     * 4. 部分卸载时分割任务到边缘和云端
-     * 5. 云端降级作为最终fallback
+     * 设计原则：卸载策略决定 "是否要边缘执行"，调度算法决定 "用哪个边缘节点"
+     * - 云端执行：不需要调度算法
+     * - 边缘执行：需要调度算法选择最优节点
      *
      * @param task 待分发的任务
-     * @return 分发结果（成功/失败、分配节点、任务信息）
+     * @return 分发结果
      */
     @Transactional
     public DispatchResult dispatch(TaskInfo task) {
-        // ---------- 1. 确定调度算法 ----------
-        String effectiveAlgorithm = (task.getSchedulingAlgorithm() != null && !task.getSchedulingAlgorithm().isBlank())
-                ? task.getSchedulingAlgorithm()
-                : algorithm;
-
-        // ---------- 2. 构建云端状态（用于卸载策略） ----------
-        CloudStatus cloudStatus = buildCloudStatus();
-
-        // ---------- 3. 获取卸载策略 ----------
-        String offloadAlg = task.getOffloadAlgorithm() != null ? task.getOffloadAlgorithm() : "latency";
-        OffloadingStrategy strategy = offloadingStrategies.get(offloadAlg.toLowerCase());
-        if (strategy == null) {
-            log.warn("未找到卸载策略 {}，使用默认latency策略", offloadAlg);
-            strategy = offloadingStrategies.get("latency");
-        }
-
-        // ---------- 4. 过滤可用节点 ----------
+        // ========== Step 1: 过滤可用节点 ==========
+        // 条件：在线 + 资源充足 + 电量 > 20%
         List<UAVNode> availableNodes = nodeService.getAllNodes().stream()
                 .filter(UAVNode::isOnline)
                 .filter(n -> n.getMaxCpu() >= task.getRequiredCpu()
@@ -160,13 +143,22 @@ public class DispatchService {
                 .filter(n -> n.getBattery() >= 20.0)
                 .toList();
 
+        // ========== Step 2: 无可用节点 → 云端降级 ==========
         if (availableNodes.isEmpty()) {
             log.warn("任务 {} 无可用边缘节点，切换到云端执行", task.getTaskName());
             return executeCloudFallback(task, "无可用边缘节点");
         }
 
-        // ---------- 5. 使用卸载策略评估边缘执行 ----------
-        // 选择一个代表性节点用于策略评估（用距离任务原点最近的节点）
+        // ========== Step 3: 获取卸载策略 ==========
+        String offloadAlg = task.getOffloadAlgorithm() != null ? task.getOffloadAlgorithm() : "latency";
+        OffloadingStrategy strategy = offloadingStrategies.get(offloadAlg.toLowerCase());
+        if (strategy == null) {
+            log.warn("未找到卸载策略 {}，使用默认latency策略", offloadAlg);
+            strategy = offloadingStrategies.get("latency");
+        }
+
+        // ========== Step 4: 使用卸载策略评估 ==========
+        // 选择代表性节点用于策略评估（距离任务原点最近的节点）
         UAVNode representativeNode = availableNodes.stream()
                 .min((a, b) -> {
                     double distA = calculateDistance(a.getX(), a.getY(), task.getOriginX(), task.getOriginY());
@@ -175,56 +167,54 @@ public class DispatchService {
                 })
                 .orElse(availableNodes.get(0));
 
-        // 调用卸载策略计算
+        CloudStatus cloudStatus = buildCloudStatus();
         OffloadResult offloadResult = strategy.calculateOffloadingPath(representativeNode, task, cloudStatus);
 
-        // ---------- 6. 根据策略决策执行 ----------
-        log.info("任务 {} 卸载决策: {} (原因: {})",
-                task.getTaskName(), offloadResult.getDecision(), offloadResult.getReason());
+        log.info("任务 {} 卸载决策: {} | 原因: {} | 候选节点: {}",
+                task.getTaskName(), offloadResult.getDecision(), offloadResult.getReason(), representativeNode.getId());
 
+        // ========== Step 5: CLOUD → 云端执行（跳过调度算法） ==========
         if (offloadResult.getDecision() == OffloadResult.Decision.CLOUD) {
             return executeCloudFallback(task, offloadResult.getReason());
-        } else if (offloadResult.getDecision() == OffloadResult.Decision.PARTIAL) {
-            return dispatchPartialOffload(task, availableNodes, effectiveAlgorithm,
-                    offloadResult.getEdgeRatio(), offloadResult.getCloudRatio());
-        } else if (offloadResult.getDecision() == OffloadResult.Decision.LOCAL) {
-            // 本地执行：实际上就是边缘执行，只是决策不同
-            // Fall through to edge execution
         }
-        // LOCAL 和 EDGE 都走边缘执行流程
 
-        // ---------- 6. 选择最优节点 ----------
+        // ========== Step 6: PARTIAL / EDGE → 调度算法选节点 ==========
+        // 只有需要边缘执行时，调度算法才有意义
+        String effectiveAlgorithm = (task.getSchedulingAlgorithm() != null && !task.getSchedulingAlgorithm().isBlank())
+                ? task.getSchedulingAlgorithm()
+                : algorithm;
+
         SchedulingAlgorithm algo = algorithms.get(effectiveAlgorithm.toLowerCase());
-        UAVNode selectedNode;
-        if (algo != null) {
-            selectedNode = algo.selectNode(availableNodes, task);
-        } else {
-            selectedNode = availableNodes.get(0);
-        }
+        UAVNode selectedNode = (algo != null)
+                ? algo.selectNode(availableNodes, task)
+                : availableNodes.get(0);
 
         if (selectedNode == null) {
             return DispatchResult.fail(task, "未找到合适的无人机节点");
         }
 
-        // ---------- 7. 边缘节点执行 ----------
-        return dispatchToEdge(task, selectedNode);
+        // 根据决策执行
+        if (offloadResult.getDecision() == OffloadResult.Decision.PARTIAL) {
+            // PARTIAL: 分割卸载（边缘 + 云端）
+            return dispatchPartialOffload(task, selectedNode,
+                    offloadResult.getEdgeRatio(), offloadResult.getCloudRatio());
+        } else {
+            // EDGE: 边缘执行
+            return dispatchToEdge(task, selectedNode);
+        }
     }
 
     /**
      * 分割卸载分发
-     * 大数据量任务采用分割执行：边缘处理 rho，云端处理 (1-rho)
+     * 任务数据分割为两部分：边缘处理 + 云端处理
      *
      * @param task 任务信息
-     * @param availableNodes 可用节点列表
-     * @param effectiveAlgorithm 调度算法名称
-     * @param edgeRatio 边缘处理比例（默认0.3）
-     * @param cloudRatio 云端处理比例（默认0.7）
+     * @param selectedNode 已选中的边缘执行节点
+     * @param edgeRatio 边缘处理比例（如 0.3 表示边缘处理 30%）
+     * @param cloudRatio 云端处理比例（如 0.7 表示云端处理 70%）
      */
-    private DispatchResult dispatchPartialOffload(TaskInfo task, List<UAVNode> availableNodes,
-                                                  String effectiveAlgorithm, double edgeRatio, double cloudRatio) {
-        // 选择一个最优节点参与分割卸载
-        SchedulingAlgorithm algo = algorithms.get(effectiveAlgorithm.toLowerCase());
-        UAVNode selectedNode = algo != null ? algo.selectNode(availableNodes, task) : availableNodes.get(0);
+    private DispatchResult dispatchPartialOffload(TaskInfo task, UAVNode selectedNode,
+                                                  double edgeRatio, double cloudRatio) {
 
         if (selectedNode == null || !nodeService.allocate(selectedNode.getId(), task.getRequiredCpu(), task.getRequiredMemory())) {
             return executeCloudFallback(task, "分割卸载节点分配失败");

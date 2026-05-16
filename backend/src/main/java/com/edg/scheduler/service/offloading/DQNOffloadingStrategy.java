@@ -35,7 +35,7 @@ public class DQNOffloadingStrategy implements OffloadingStrategy {
     // 神经网络结构
     private static final int INPUT_SIZE = 6;      // 状态维度
     private static final int HIDDEN_SIZE = 12;    // 隐藏层维度
-    private static final int OUTPUT_SIZE = 4;      // 动作数量
+    private static final int OUTPUT_SIZE = 3;      // 动作数量（EDGE/CLOUD/PARTIAL）
 
     // DQN 超参数
     private static final double LEARNING_RATE = 0.01;
@@ -44,11 +44,11 @@ public class DQNOffloadingStrategy implements OffloadingStrategy {
     private static final double EPSILON_END = 0.1;
     private static final double EPSILON_DECAY = 0.995;
 
-    // 动作枚举
-    private static final int ACTION_LOCAL = 0;
-    private static final int ACTION_EDGE = 1;
-    private static final int ACTION_CLOUD = 2;
-    private static final int ACTION_PARTIAL = 3;
+    // 动作枚举（本系统只有：边缘/云端/分割，无本地）
+    // 注意：与 OffloadResult.Decision 对应，但去掉了 LOCAL
+    private static final int ACTION_EDGE = 0;
+    private static final int ACTION_CLOUD = 1;
+    private static final int ACTION_PARTIAL = 2;
 
     // 神经网络权重（简化版：使用随机初始化）
     private double[][] w1;  // 输入层 -> 隐藏层
@@ -274,15 +274,10 @@ public class DQNOffloadingStrategy implements OffloadingStrategy {
 
     /**
      * 根据动作获取卸载结果
+     * 动作空间：EDGE(0) / CLOUD(1) / PARTIAL(2)
      */
     private OffloadResult getOffloadResult(int action, TaskInfo task, UAVNode node, CloudStatus cloud) {
         switch (action) {
-            case ACTION_LOCAL:
-                return OffloadResult.local(
-                        "DQN决策-本地执行",
-                        estimateLocalLatency(task, node),
-                        estimateLocalEnergy(task, node));
-
             case ACTION_EDGE:
                 return OffloadResult.edge(
                         "DQN决策-边缘执行",
@@ -306,6 +301,7 @@ public class DQNOffloadingStrategy implements OffloadingStrategy {
                         estimatePartialEnergy(task, node, cloud, rho));
 
             default:
+                // 未知动作，默认边缘执行
                 return OffloadResult.edge("DQN默认-边缘执行", estimateEdgeLatency(task, node), estimateEdgeEnergy(task, node));
         }
     }
@@ -322,13 +318,6 @@ public class DQNOffloadingStrategy implements OffloadingStrategy {
         double timeRatio = (cloudTime > edgeTime) ? cloudTime / edgeTime : 1.0;
         double rho = V_edge / (V_edge + V_trans) / timeRatio;
         return Math.max(0.1, Math.min(0.9, rho));
-    }
-
-    /**
-     * 估算本地延迟
-     */
-    private double estimateLocalLatency(TaskInfo task, UAVNode node) {
-        return (task.getDataSize() / node.getMaxCpu()) * 0.1 * 1000;
     }
 
     /**
@@ -366,19 +355,12 @@ public class DQNOffloadingStrategy implements OffloadingStrategy {
     }
 
     /**
-     * 估算本地能耗
-     */
-    private double estimateLocalEnergy(TaskInfo task, UAVNode node) {
-        double computePower = 5.0;
-        double timeSec = (task.getDataSize() / node.getMaxCpu()) * 0.1;
-        return computePower * node.getDrainRateMultiplier() * timeSec;
-    }
-
-    /**
      * 估算边缘能耗
      */
     private double estimateEdgeEnergy(TaskInfo task, UAVNode node) {
-        return estimateLocalEnergy(task, node);
+        double computePower = 5.0;
+        double timeSec = (task.getDataSize() / node.getMaxCpu()) * 0.1;
+        return computePower * node.getDrainRateMultiplier() * timeSec;
     }
 
     /**
