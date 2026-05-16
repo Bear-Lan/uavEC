@@ -1,4 +1,4 @@
-package com.edg.scheduler.service.offloading;
+package com.edg.scheduler.service.offloading.model;
 
 import lombok.Data;
 

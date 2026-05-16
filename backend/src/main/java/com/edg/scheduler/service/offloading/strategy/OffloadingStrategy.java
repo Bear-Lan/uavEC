@@ -1,7 +1,9 @@
-package com.edg.scheduler.service.offloading;
+package com.edg.scheduler.service.offloading.strategy;
 
 import com.edg.scheduler.model.TaskInfo;
 import com.edg.scheduler.model.UAVNode;
+import com.edg.scheduler.service.offloading.model.OffloadResult;
+import com.edg.scheduler.service.offloading.model.CloudStatus;
 
 /**
  * 卸载策略接口

@@ -20,9 +20,9 @@ import com.edg.scheduler.service.algorithm.SchedulingAlgorithm;
 import com.edg.scheduler.model.TaskTraceLog;
 import com.edg.scheduler.repository.TaskTraceLogRepository;
 
-import com.edg.scheduler.service.offloading.CloudStatus;
-import com.edg.scheduler.service.offloading.OffloadResult;
-import com.edg.scheduler.service.offloading.OffloadingStrategy;
+import com.edg.scheduler.service.offloading.model.CloudStatus;
+import com.edg.scheduler.service.offloading.model.OffloadResult;
+import com.edg.scheduler.service.offloading.strategy.OffloadingStrategy;
 
 import org.redisson.api.RedissonClient;
 
