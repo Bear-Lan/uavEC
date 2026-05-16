@@ -42,10 +42,14 @@
 │  │  └─────┬──────┘  └─────┬──────┘  └─────┬──────┘  └─────┬─────┘  │  │
 │  │        │               │               │               │        │  │
 │  │  ┌─────▼───────────────▼───────────────▼───────────────▼─────┐  │  │
-│  │  │              Scheduling Algorithm (策略模式)               │  │  │
-│  │  │    ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐    │  │  │
-│  │  │    │ Greedy  │  │   WFQ   │  │   Geo   │  │ Custom  │    │  │  │
-│  │  │    └─────────┘  └─────────┘  └─────────┘  └─────────┘    │  │  │
+│  │  │         Offloading Strategy (卸载策略模式)                 │  │  │
+│  │  │  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐    │  │  │
+│  │  │  │ Latency │  │ Energy  │  │Adaptive │  │   DQN   │    │  │  │
+│  │  │  │Optimal  │  │Optimal  │  │ Partial │  │         │    │  │  │
+│  │  │  └─────────┘  └─────────┘  └─────────┘  └─────────┘    │  │  │
+│  │  └───────────────────────────────────────────────────────────┘  │  │
+│  │  ┌───────────────────────────────────────────────────────────┐  │  │
+│  │  │              CloudSimulationService (云端模拟)             │  │  │
 │  │  └───────────────────────────────────────────────────────────┘  │  │
 │  └──────────────────────────────────────────────────────────────────┘  │
 │                                     │                                     │
@@ -85,8 +89,8 @@
 
 **职责**:
 - 任务分发决策
-- 调度算法选择
-- 算力卸载决策（本地/边缘/云端）
+- 调度算法选择（greedy/wfq/geo/custom/latency/energy/adaptive/dqn）
+- 算力卸载决策（边缘/云端/部分卸载）
 - Shannon 带宽模型计算
 - 云端降级处理
 
@@ -123,23 +127,50 @@ private void workStealing()
 
 **关键方法**:
 ```java
-public void addNode()
-public void deleteNode(String nodeId)
-public boolean allocateResources(String nodeId, double cpu, double memory)
+public UAVNode addNode()
+public boolean deleteNode(String nodeId)
+public void setNodeStatus(String nodeId, boolean online)
+public void emergencyCharge(String nodeId)
 public void createSnapshot()
-public void rollbackSnapshot()
+public void restoreSnapshot()
 ```
 
-### 4.4 调度算法
+### 4.4 卸载策略 (Offloading Strategy)
 
-采用策略模式，支持多种调度算法：
+采用策略模式，支持多种卸载算法：
 
 | 算法 | 策略 | 适用场景 |
 |------|------|---------|
-| **Greedy** | 选择 CPU 剩余最多的节点 | 追求最大算力利用 |
-| **WFQ** | 选择任务数最少的节点 | 追求负载均衡 |
-| **Geo** | 基于距离、电量、CPU 加权 | 追求低延迟 |
-| **Custom** | 用户可配置权重 | 自定义调度策略 |
+| **LatencyOptimal** | 基于 M/M/1 排队论的延迟最优 | 追求低延迟 |
+| **EnergyOptimal** | 基于 DVFS 的能耗最优 | 追求节能 |
+| **AdaptivePartial** | 自适应部分卸载 | 边缘+云端混合 |
+| **DQN** | 深度强化学习 | 智能决策 |
+
+**核心接口**:
+```java
+public interface OffloadingStrategy {
+    OffloadResult calculateOffloadingPath(UAVNode node, TaskInfo task, CloudStatus cloud);
+    String getName();
+}
+```
+
+**卸载结果 (OffloadResult)**:
+```java
+public enum Decision {
+    EDGE,      // 边缘执行（无人机）
+    CLOUD,     // 云端执行
+    PARTIAL    // 部分卸载（边缘+云端）
+}
+```
+
+### 4.5 云端模拟服务 (CloudSimulationService)
+
+**职责**:
+- 模拟云端服务器状态
+- 延迟和带宽建模
+- 边缘故障时提供降级能力
+
+---
 
 ---
 
@@ -263,8 +294,9 @@ TaskInfo (1) ─────< (N) TaskTraceLog
 
 ## 9. 关键特性
 
-1. **智能算力卸载** - 本地/边缘/云端三级降级
-2. **分布式锁** - Redisson 保证高并发一致性
-3. **实时监控** - WebSocket 毫秒级推送
-4. **故障恢复** - 工作窃取、任务迁移、快照回滚
-5. **多算法支持** - 策略模式扩展调度算法
+1. **智能算力卸载** - 边缘/云端/部分卸载三级降级（无LOCAL概念）
+2. **多卸载策略** - LatencyOptimal/EnergyOptimal/AdaptivePartial/DQN
+3. **分布式锁** - Redisson 保证高并发一致性
+4. **实时监控** - WebSocket 毫秒级推送
+5. **故障恢复** - 工作窃取、任务迁移、快照回滚
+6. **云端模拟** - CloudSimulationService 提供云端降级能力

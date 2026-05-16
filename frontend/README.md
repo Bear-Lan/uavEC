@@ -46,12 +46,46 @@ frontend/
 
 ## 功能模块
 
-- **Dashboard** - 系统总览仪表盘
-- **Cluster** - UAV 节点集群管理
-- **Trace** - 任务执行轨迹追踪
-- **Analytics** - 调度数据分析与可视化
-- **User Management** - 用户权限管理
-- **登录认证** - 基于 JWT 的用户认证
+### Dashboard - 系统总览仪表盘
+- 雷达视图可视化节点拓扑
+- 实时任务状态展示
+- 系统运行状态概览
+
+### Cluster - UAV 节点集群管理
+- 动态添加/移除无人机节点
+- 节点状态监控（在线/离线/充电中）
+- 节点算力配置（CPU/内存/带宽）
+- 电池电量与 RTH 返航模拟
+- 快照创建与回滚
+
+### Trace - 任务执行轨迹追踪
+- 任务全生命周期耗时追踪
+- 排队延迟、传输延迟、计算延迟可视化
+- 任务状态流转展示
+
+### Analytics - 调度数据分析与可视化
+- ECharts 多维指标图表
+- 延迟/能耗/带宽趋势分析
+- 批次指标历史查询
+
+### User Management - 用户权限管理
+- 用户注册与登录认证
+- 角色权限管理（ADMIN/USER）
+
+## 卸载策略支持
+
+系统支持多种任务卸载算法，可在发布任务时选择：
+
+| 算法 | 描述 | 优化目标 |
+|------|------|----------|
+| `greedy` | 贪心算法 - 选择 CPU 剩余最多的节点 | 最大算力利用 |
+| `wfq` | 加权公平队列 - 选择任务数最少的节点 | 负载均衡 |
+| `geo` | 地理拓扑 - 基于距离、电量、CPU 加权 | 低延迟 |
+| `custom` | 自定义算法 - 用户可配置权重 | 自定义调度 |
+| `latency` | 延迟最优 - 基于 M/M/1 排队论 | 最小化延迟 |
+| `energy` | 能耗最优 - 基于 DVFS 动态调频 | 最小化能耗 |
+| `adaptive` | 自适应部分卸载 | 边缘/云端平衡 |
+| `dqn` | 深度强化学习 - DQN 智能决策 | 长期累积奖励 |
 
 ## 快速开始
 
@@ -79,17 +113,36 @@ npm run build
 npm run preview
 ```
 
+## WebSocket 实时通信
+
+前端通过 STOMP.js + SockJS 与后端建立 WebSocket 连接，实现毫秒级状态推送：
+
+```typescript
+// 状态订阅示例
+stompClient.subscribe('/topic/system/status', (message) => {
+  const status = JSON.parse(message.body);
+  // 更新 Pinia store
+});
+```
+
+## API 服务
+
+前端通过 Axios 封装后端 REST API：
+
+| 服务 | 说明 |
+|------|------|
+| `/api/auth/*` | 认证接口 |
+| `/api/nodes/*` | 节点管理接口 |
+| `/api/tasks/*` | 任务管理接口 |
+| `/api/traffic/*` | 流量生成接口 |
+| `/api/metrics/*` | 指标查询接口 |
+
 ## 后端服务
 
-后端基于 Spring Boot 3.1.5 + Java 17 构建，提供 REST API 和 WebSocket 通信接口。
+后端基于 Spring Boot 3.1.5 + Java 17 构建，提供：
+- REST API 接口 (`/api/*`)
+- WebSocket 实时推送 (`/ws`)
+- MySQL 持久化存储
+- Redis 分布式队列与锁
 
-详见 [backend/README.md](../backend/README.md)
-
-## 调度算法
-
-系统支持多种任务调度算法：
-
-- **Greedy Algorithm** - 贪心算法
-- **WFQ (Weighted Fair Queuing)** - 加权公平队列
-- **Geo Algorithm** - 地理位置调度
-- **Custom Algorithm** - 自定义调度策略
+详见 [backend/README.md](../backend/README.md) 和 [docs/architecture.md](../docs/architecture.md)

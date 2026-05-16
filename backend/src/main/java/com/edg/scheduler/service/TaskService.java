@@ -415,6 +415,7 @@ public class TaskService {
 
             activeMap.remove(task.getId());
             redissonClient.getDeque(TASK_QUEUE_KEY).addLast(task);
+            taskRepository.save(task);  // 持久化到数据库
             log.info("Task {} requeued due to cluster rollback", task.getId());
         }
         messagingTemplate.convertAndSend("/topic/tasks", tasksToRequeue.size() + " tasks rolled back");

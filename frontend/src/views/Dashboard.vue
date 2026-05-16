@@ -145,7 +145,11 @@
              </div>
              <div class="kpi-block">
                 <div class="kpi-label">RUNNING TASKS</div>
-                <div class="kpi-value highlight-warning">{{ appStore.activeTasks.length }}</div>
+                <div class="kpi-value highlight-warning">{{ runningTasksCount }}</div>
+             </div>
+             <div class="kpi-block">
+                <div class="kpi-label">QUEUED TASKS</div>
+                <div class="kpi-value" :class="queuedTasksCount > 0 ? 'highlight-accent' : ''">{{ queuedTasksCount }}</div>
              </div>
           </div>
           <svg ref="radarSvg" class="radar-svg" width="100%" height="100%" :viewBox="currentViewBox" preserveAspectRatio="none"
@@ -183,7 +187,7 @@
             <!-- 实时通信链路光束 -->
             <line v-for="line in activeLines" :key="line.id"
                   :x1="line.x1" :y1="line.y1" :x2="line.x2" :y2="line.y2"
-                  :class="line.type === 'edge' ? 'edge-link' : (line.type === 'cloud' ? 'cloud-link' : (line.type === 'split' ? 'split-link' : (line.type === 'queued' ? 'queued-link' : 'fallback-link')))" />
+                  :class="line.type === 'edge' ? 'edge-link' : (line.type === 'cloud' ? 'cloud-link' : (line.type === 'split' ? 'split-link' : 'fallback-link'))" />
 
             <!-- 工作负载窃取重定向链路 -->
             <line v-for="steal in activeSteals" :key="steal.id"
@@ -323,6 +327,18 @@ const avgBattery = computed(() => {
     return sum / appStore.nodes.length;
 });
 
+const runningTasksCount = computed(() => {
+    return appStore.activeTasks.filter(t =>
+        t.status === 'RUNNING_EDGE' || t.status === 'RUNNING_CLOUD' || t.status === 'RUNNING_SPLIT'
+    ).length;
+});
+
+const queuedTasksCount = computed(() => {
+    return appStore.activeTasks.filter(t =>
+        t.status === 'QUEUED' || t.status === 'DISPATCHING'
+    ).length;
+});
+
 const startNodeDrag = (node: any) => {
     draggedNode.value = node;
 }
@@ -415,20 +431,12 @@ const taskForm = ref<TaskInfo>({
 const activeOrigins = ref<{id: string, x: number, y: number}[]>([])
 const activeLines = computed(() => {
     return appStore.activeTasks.flatMap(task => {
-        let lines = [];
-
-        // 处理排队中的任务 - 显示为原点的脉冲效果
+        // 排队中的任务不画链路
         if (task.status === 'QUEUED' || task.status === 'DISPATCHING') {
-            lines.push({
-                id: `line-queued-${task.id}`,
-                type: 'queued',
-                x1: task.originX || 50,
-                y1: task.originY || 50,
-                x2: task.originX || 50,
-                y2: task.originY || 50
-            });
-            return lines;
+            return [];
         }
+
+        let lines = [];
 
         const isSplit = task.assignedUavId && task.assignedUavId.includes('& CLOUD');
         let edgeUavId = task.assignedUavId;
@@ -990,16 +998,6 @@ onMounted(async () => {
   filter: drop-shadow(0 0 3px rgba(168, 85, 247, 0.5));
 }
 
-/* 排队中任务链路 - 橙色脉冲 */
-.queued-link {
-  stroke: #e6a23c;
-  stroke-width: 0.8;
-  stroke-dasharray: 1, 4;
-  stroke-linecap: round;
-  animation: queuedPulse 0.8s ease-in-out infinite;
-  filter: drop-shadow(0 0 2px rgba(230, 162, 60, 0.4));
-}
-
 /* 后备/降级链路 - 灰色 */
 .fallback-link {
   stroke: #6b7280;
@@ -1008,12 +1006,6 @@ onMounted(async () => {
   stroke-linecap: round;
   animation: dash 1s linear infinite;
   filter: none;
-}
-
-@keyframes queuedPulse {
-  0% { opacity: 0.4; stroke-width: 0.5; }
-  50% { opacity: 1; stroke-width: 1.2; }
-  100% { opacity: 0.4; stroke-width: 0.5; }
 }
 
 @keyframes cloudFlow {

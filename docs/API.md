@@ -197,6 +197,16 @@ POST /api/tasks
   "customW3": 0.5
 }
 ```
+**offloadAlgorithm 选项**:
+- `greedy` - 贪心算法
+- `wfq` - 加权公平队列
+- `geo` - 地理拓扑
+- `custom` - 自定义权重
+- `latency` - 延迟最优
+- `energy` - 能耗最优
+- `adaptive` - 自适应部分卸载
+- `dqn` - 深度强化学习
+
 **响应**: `200 OK`
 
 ---
@@ -333,3 +343,7 @@ GET /api/system/status
 | `wfq` | 加权公平队列 - 选择任务数最少的节点 |
 | `geo` | 地理拓扑 - 基于距离、电量、CPU 的加权选择 |
 | `custom` | 自定义算法 - 用户可配置权重 |
+| `latency` | 延迟最优 - 基于 M/M/1 排队论 |
+| `energy` | 能耗最优 - 基于 DVFS 动态电压频率调节 |
+| `adaptive` | 自适应部分卸载 - 边缘+云端混合 |
+| `dqn` | 深度强化学习 - DQN 智能决策 |
