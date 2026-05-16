@@ -126,8 +126,12 @@ public class TaskService {
      */
     @Scheduled(fixedDelay = 500)
     public void processTaskQueue() {
-        // 每次最多从队列头消费 10 个周期任务，显著拔高系统吞吐力上限
-        int maxPerTick = 10;
+        // 根据在线无人机数量动态调整每周期处理任务数
+        // 每个在线节点每周期最多处理2个任务，系统最少处理1个，最多处理20个
+        //限制20个任务的上限，防止在节点数量激增时发生雪崩式调度压力
+        int onlineNodeCount = (int)nodeService.getAllNodes().stream().filter(com.edg.scheduler.model.UAVNode::isOnline).count();
+        int maxPerTick = Math.max(1, Math.min(20, onlineNodeCount * 2));
+
         org.redisson.api.RDeque<TaskInfo> queue = redissonClient.getDeque(TASK_QUEUE_KEY);
 
         for (int i = 0; i < maxPerTick; i++) {
