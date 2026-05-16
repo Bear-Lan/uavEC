@@ -37,6 +37,7 @@ app:
       cloud-queue-penalty-ms: 2000 # 云端排队惩罚（毫秒）
       distance-delay-ms-per-unit: 5.0  # 每单位距离的传输延迟（毫秒），替代简单的 distance*10
     simulation:
+      uav-thread-enabled: true   # 是否启用 UAV 独立线程执行任务
       base-drain-rate: 0.2
       compute-drain-multiplier: 0.8
       move-speed: 2.0

@@ -20,6 +20,10 @@ import com.edg.scheduler.service.algorithm.SchedulingAlgorithm;
 import com.edg.scheduler.model.TaskTraceLog;
 import com.edg.scheduler.repository.TaskTraceLogRepository;
 
+import com.edg.scheduler.service.offloading.CloudStatus;
+import com.edg.scheduler.service.offloading.OffloadResult;
+import com.edg.scheduler.service.offloading.OffloadingStrategy;
+
 import org.redisson.api.RedissonClient;
 
 /**
@@ -57,22 +61,30 @@ public class DispatchService {
     @Autowired
     private TaskTraceLogRepository traceLogRepository;
 
+    @Autowired
+    private UAVSimulationService uavSimulationService;
+
     private final Map<String, SchedulingAlgorithm> algorithms;
+    private final Map<String, OffloadingStrategy> offloadingStrategies;
 
     /**
-     * 构造函数 - 初始化调度算法映射
+     * 构造函数 - 初始化调度算法映射和卸载策略映射
      *
      * 功能描述：
      * - 注入所有实现了SchedulingAlgorithm接口的算法组件
+     * - 注入所有实现了OffloadingStrategy接口的卸载策略组件
      * - 将算法名称作为key，算法实例作为value存入Map
-     * - 用于后续快速查找调度算法
+     * - 用于后续快速查找调度算法和卸载策略
      *
      * @param algoList Spring自动注入的算法列表
+     * @param offloadList Spring自动注入的卸载策略列表
      */
     @Autowired
-    public DispatchService(List<SchedulingAlgorithm> algoList) {
+    public DispatchService(List<SchedulingAlgorithm> algoList, List<OffloadingStrategy> offloadList) {
         this.algorithms = algoList.stream()
                 .collect(Collectors.toMap(SchedulingAlgorithm::getName, algo -> algo));
+        this.offloadingStrategies = offloadList.stream()
+                .collect(Collectors.toMap(OffloadingStrategy::getName, strategy -> strategy));
     }
 
     @Value("${app.scheduler.algorithm:greedy}")
@@ -98,6 +110,9 @@ public class DispatchService {
 
     @Value("${app.scheduler.offload.distance-delay-ms-per-unit:5.0}")
     private double distanceDelayMsPerUnit;
+
+    @Value("${app.scheduler.simulation.uav-thread-enabled:true}")
+    private boolean uavThreadEnabled;
 
     /**
      * 分发任务到最优节点
@@ -126,71 +141,22 @@ public class DispatchService {
                 ? task.getSchedulingAlgorithm()
                 : algorithm;
 
-        // ---------- 2. 先做卸载决策（不需要具体节点，用平均估算） ----------
-        // 卸载决策优先级：任务设定 > 默认latency
+        // ---------- 2. 构建云端状态（用于卸载策略） ----------
+        CloudStatus cloudStatus = buildCloudStatus();
+
+        // ---------- 3. 获取卸载策略 ----------
         String offloadAlg = task.getOffloadAlgorithm() != null ? task.getOffloadAlgorithm() : "latency";
-
-        // 用平均估算距离和带宽，用于卸载决策
-        double avgDistance = 50.0; // 假设平均距离50单位
-        double pathLossMultiplier = Math.pow(Math.max(1.0, avgDistance / 10.0), 2);
-        double snr = 100.0 / pathLossMultiplier;
-        double shannonFactor = Math.log(1 + snr) / Math.log(2);
-        double maxFactor = Math.log(1 + 100.0) / Math.log(2);
-        double avgBandwidthMBps = Math.max(0.5, (100.0 / 8.0) * (shannonFactor / maxFactor)); // 归一化带宽估算
-
-        // 估算本地执行时间（假设平均CPU为4核）
-        double localTimeEstimate = (task.getDataSize() / 4.0) * 0.1; // 秒
-
-        // 根据卸载算法做决策
-        boolean offloadToCloud = false;
-
-        if ("energy".equalsIgnoreCase(offloadAlg)) {
-            // 能耗感知策略：比较本地计算能耗 vs 传输能耗
-            double localPower = 5.0; // 本地计算功率 (W)
-            double localEnergy = localPower * localTimeEstimate;
-
-            double baseTxPower = 2.0; // 传输功率 (W)
-            double txPower = baseTxPower * pathLossMultiplier;
-            double txTime = task.getDataSize() / avgBandwidthMBps;
-            double offloadEnergy = txPower * txTime;
-
-            log.info("任务 {}: 能耗评估 - 本地:{}J vs 传输:{}J (平均距离:{}, 衰减:{})",
-                    task.getTaskName(), String.format("%.2f", localEnergy), String.format("%.2f", offloadEnergy),
-                    String.format("%.2f", avgDistance), String.format("%.2f", pathLossMultiplier));
-
-            // 本地能耗过高时卸载到云端（简化判断，不考虑具体节点电量）
-            if (localEnergy > offloadEnergy * 3.0) {
-                offloadToCloud = true;
-            }
-        } else if ("latency".equalsIgnoreCase(offloadAlg)) {
-            // 延迟最优策略：比较本地执行时间 vs 云端总耗时
-            double txTime = task.getDataSize() / avgBandwidthMBps; // 估算传输到云端耗时
-            double cloudExecutionTime = (task.getDataSize() / cloudCpuCores) * 0.1;
-            double totalOffloadTime = txTime + cloudExecutionTime + (wanLatencyMs / 1000.0) + (cloudQueuePenaltyMs / 1000.0);
-
-            log.info("任务 {}: 延迟评估 - 本地(估算):{}秒 vs 云端:{}秒",
-                    task.getTaskName(), String.format("%.3f", localTimeEstimate), String.format("%.3f", totalOffloadTime));
-
-            if (totalOffloadTime < localTimeEstimate * 0.8) { // 乘以0.8的阈值，避免频繁切换
-                offloadToCloud = true;
-            }
-        } else {
-            // 阈值策略：数据量超过500MB时强制卸载到云端
-            offloadToCloud = task.getDataSize() > 500;
+        OffloadingStrategy strategy = offloadingStrategies.get(offloadAlg.toLowerCase());
+        if (strategy == null) {
+            log.warn("未找到卸载策略 {}，使用默认latency策略", offloadAlg);
+            strategy = offloadingStrategies.get("latency");
         }
 
-        // ---------- 3. 如果决定云端执行，直接走云端 ----------
-        if (offloadToCloud) {
-            log.info("任务 {} 决策卸载到云端执行", task.getTaskName());
-            return executeCloudFallback(task, "延迟/能耗策略决策云端执行");
-        }
-
-        // ---------- 4. 边缘执行：过滤可用节点 ----------
+        // ---------- 4. 过滤可用节点 ----------
         List<UAVNode> availableNodes = nodeService.getAllNodes().stream()
                 .filter(UAVNode::isOnline)
                 .filter(n -> n.getMaxCpu() >= task.getRequiredCpu()
                         && n.getMaxMemory() >= task.getRequiredMemory())
-                // 电池电量过低不分配新任务
                 .filter(n -> n.getBattery() >= 20.0)
                 .toList();
 
@@ -199,11 +165,33 @@ public class DispatchService {
             return executeCloudFallback(task, "无可用边缘节点");
         }
 
-        // ---------- 5. 分割卸载判断 ----------
-        boolean partialOffload = task.getDataSize() > partialThresholdMb;
-        if (partialOffload) {
-            return dispatchPartialOffload(task, availableNodes, effectiveAlgorithm);
+        // ---------- 5. 使用卸载策略评估边缘执行 ----------
+        // 选择一个代表性节点用于策略评估（用距离任务原点最近的节点）
+        UAVNode representativeNode = availableNodes.stream()
+                .min((a, b) -> {
+                    double distA = calculateDistance(a.getX(), a.getY(), task.getOriginX(), task.getOriginY());
+                    double distB = calculateDistance(b.getX(), b.getY(), task.getOriginX(), task.getOriginY());
+                    return Double.compare(distA, distB);
+                })
+                .orElse(availableNodes.get(0));
+
+        // 调用卸载策略计算
+        OffloadResult offloadResult = strategy.calculateOffloadingPath(representativeNode, task, cloudStatus);
+
+        // ---------- 6. 根据策略决策执行 ----------
+        log.info("任务 {} 卸载决策: {} (原因: {})",
+                task.getTaskName(), offloadResult.getDecision(), offloadResult.getReason());
+
+        if (offloadResult.getDecision() == OffloadResult.Decision.CLOUD) {
+            return executeCloudFallback(task, offloadResult.getReason());
+        } else if (offloadResult.getDecision() == OffloadResult.Decision.PARTIAL) {
+            return dispatchPartialOffload(task, availableNodes, effectiveAlgorithm,
+                    offloadResult.getEdgeRatio(), offloadResult.getCloudRatio());
+        } else if (offloadResult.getDecision() == OffloadResult.Decision.LOCAL) {
+            // 本地执行：实际上就是边缘执行，只是决策不同
+            // Fall through to edge execution
         }
+        // LOCAL 和 EDGE 都走边缘执行流程
 
         // ---------- 6. 选择最优节点 ----------
         SchedulingAlgorithm algo = algorithms.get(effectiveAlgorithm.toLowerCase());
@@ -224,9 +212,16 @@ public class DispatchService {
 
     /**
      * 分割卸载分发
-     * 大数据量任务（>200MB）采用分割执行：边缘处理30%，云端处理70%
+     * 大数据量任务采用分割执行：边缘处理 rho，云端处理 (1-rho)
+     *
+     * @param task 任务信息
+     * @param availableNodes 可用节点列表
+     * @param effectiveAlgorithm 调度算法名称
+     * @param edgeRatio 边缘处理比例（默认0.3）
+     * @param cloudRatio 云端处理比例（默认0.7）
      */
-    private DispatchResult dispatchPartialOffload(TaskInfo task, List<UAVNode> availableNodes, String effectiveAlgorithm) {
+    private DispatchResult dispatchPartialOffload(TaskInfo task, List<UAVNode> availableNodes,
+                                                  String effectiveAlgorithm, double edgeRatio, double cloudRatio) {
         // 选择一个最优节点参与分割卸载
         SchedulingAlgorithm algo = algorithms.get(effectiveAlgorithm.toLowerCase());
         UAVNode selectedNode = algo != null ? algo.selectNode(availableNodes, task) : availableNodes.get(0);
@@ -235,9 +230,9 @@ public class DispatchService {
             return executeCloudFallback(task, "分割卸载节点分配失败");
         }
 
-        log.info("任务 {} 触发分割卸载(数据量:{}MB > 阈值:{}MB)，分割比例:边缘{}% 云端{}%",
-                task.getTaskName(), task.getDataSize(), partialThresholdMb,
-                (int)(partialEdgeRatio * 100), (int)((1 - partialEdgeRatio) * 100));
+        log.info("任务 {} 触发分割卸载，数据量:{}MB，边缘:{:.0f}% 云端:{:.0f}%",
+                task.getTaskName(), formatInt(task.getDataSize()),
+                edgeRatio * 100, cloudRatio * 100);
 
         task.setAssignedUavId(selectedNode.getId() + " & CLOUD");
         task.setStatus("RUNNING_SPLIT");
@@ -252,8 +247,8 @@ public class DispatchService {
         effectiveBandwidthMBps = Math.max(0.5, effectiveBandwidthMBps);
 
         // 数据分割
-        double localData = task.getDataSize() * partialEdgeRatio;
-        double cloudData = task.getDataSize() * (1 - partialEdgeRatio);
+        double localData = task.getDataSize() * edgeRatio;
+        double cloudData = task.getDataSize() * cloudRatio;
 
         // 边缘处理时间 = 本地计算 + 传输延迟
         long localExecutionMs = (long) ((localData / selectedNode.getMaxCpu()) * 100);
@@ -348,8 +343,17 @@ public class DispatchService {
         broadcastState();
         broadcastTaskUpdate(task);
 
-        // 异步模拟边缘执行
-        simulateExecution(task, selectedNode, transmissionDelay);
+        // 根据配置选择使用 UAV 独立线程执行或后端线程池模拟
+        if (uavThreadEnabled) {
+            // 投递任务到 UAV worker 线程执行
+            boolean enqueued = uavSimulationService.enqueueTask(selectedNode.getId(), task);
+            if (!enqueued) {
+                log.warn("UAV {} task queue full, falling back to async simulation", selectedNode.getId());
+                simulateExecution(task, selectedNode, transmissionDelay);
+            }
+        } else {
+            simulateExecution(task, selectedNode, transmissionDelay);
+        }
 
         return DispatchResult.success(task, selectedNode.getId());
     }
@@ -520,6 +524,37 @@ public class DispatchService {
                 broadcastTaskUpdate(task);
             }
         });
+    }
+
+    /**
+     * 构建云端状态信息
+     */
+    private CloudStatus buildCloudStatus() {
+        CloudStatus status = new CloudStatus();
+        status.setLambda(0.5);  // 默认到达率 0.5 任务/秒
+        status.setMu(1.0);      // 默认服务率 1.0 任务/秒
+        status.setAvailableCpu(cloudCpuCores);
+        status.setBandwidthMbps(cloudBandwidthMbps);
+
+        // 可以从 Redisson 或数据库获取实际的队列长度等信息
+        Object queueLen = redissonClient.getMap("cloud:stats").get("queueLength");
+        if (queueLen != null) {
+            status.setQueueLength((Integer) queueLen);
+            // 估算实际到达率 = 队列长度 / 观察窗口
+            status.setLambda(Math.min(5.0, status.getQueueLength() * 0.1));
+        }
+
+        return status;
+    }
+
+    /**
+     * 格式化整数输出（整数不带小数点）
+     */
+    private String formatInt(double value) {
+        if (value == Math.floor(value) && !Double.isInfinite(value)) {
+            return String.format("%.0f", value);
+        }
+        return String.format("%.2f", value);
     }
 
     /**
