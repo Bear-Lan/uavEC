@@ -87,5 +87,10 @@ export const api = {
     // 任务追踪与路由审计 - 获取已完成任务
     getCompletedTasks() {
         return axios.get(`${API_BASE}/tasks/completed`)
+    },
+
+    // 获取活跃/排队任务
+    getActiveTasks() {
+        return axios.get(`${API_BASE}/tasks/active`)
     }
 }

@@ -60,6 +60,20 @@ public class MetricsService {
     }
 
     /**
+     * 获取所有活跃/排队任务
+     * @return 当前正在执行或排队的任务列表
+     */
+    @Transactional(readOnly = true)
+    public List<TaskInfo> getActiveTasks() {
+        return taskRepository.findAll().stream()
+                .filter(t -> t.getStatus() != null
+                        && (t.getStatus().startsWith("RUNNING")
+                            || t.getStatus().equals("DISPATCHING")
+                            || t.getStatus().equals("QUEUED")))
+                .toList();
+    }
+
+    /**
      * 获取指定批次的性能指标
      * @param batchId 批次 ID
      * @return 性能指标 Map，包含：

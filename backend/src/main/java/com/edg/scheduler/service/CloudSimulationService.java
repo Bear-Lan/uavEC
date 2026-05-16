@@ -33,6 +33,15 @@ public class CloudSimulationService {
     @Autowired
     private SimpMessagingTemplate messagingTemplate;
 
+    @Autowired
+    private com.edg.scheduler.repository.TaskRepository taskRepository;
+
+    @Autowired
+    private com.edg.scheduler.repository.TaskTraceLogRepository traceLogRepository;
+
+    @Autowired
+    private NodeService nodeService;
+
     @Value("${app.scheduler.cloud.cpu-cores:64.0}")
     private double cloudCpuCores;
 
@@ -148,7 +157,21 @@ public class CloudSimulationService {
             double txPower = 2.0;
             task.setActualEnergyUsed(txPower * txTimeSec);
 
+            // 保存任务状态到数据库
+            taskRepository.save(task);
+
+            // 更新追踪日志
+            TaskTraceLog traceLog = traceLogRepository.findByTaskId(task.getId());
+            if (traceLog != null) {
+                traceLog.setExecutionEndTime(System.currentTimeMillis());
+                traceLog.setComputeLatency(totalTimeMs);
+                traceLogRepository.save(traceLog);
+            }
+
             log.info("云端完成任务 {} 完成, 耗时 {}ms", task.getId(), totalTimeMs);
+
+            // 广播任务完成状态到 WebSocket
+            messagingTemplate.convertAndSend("/topic/tasks", task);
 
         } catch (InterruptedException e) {
             task.setStatus("FAILED");

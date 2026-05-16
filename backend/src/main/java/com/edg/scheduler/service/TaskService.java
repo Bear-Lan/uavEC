@@ -159,6 +159,12 @@ public class TaskService {
                 taskRepository.save(task);
             } else {
                 log.warn("任务 {} 分发失败: {}，重新放回队列", task.getTaskName(), result.getMessage());
+                // 添加退避延迟，避免连续忙等待
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
                 queue.addFirst(task);
             }
         }

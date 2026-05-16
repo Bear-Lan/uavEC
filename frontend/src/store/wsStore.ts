@@ -5,6 +5,7 @@ import { ElNotification } from 'element-plus'
 import { useNodeStore } from './nodeStore'
 import { useTaskStore } from './taskStore'
 import { useAuthStore } from './authStore'
+import { api } from '../services/api'
 
 export interface OnlineUser {
     username: string
@@ -37,6 +38,32 @@ export const useWsStore = defineStore('ws', {
                 console.log('Connected to Edge Grid WebSocket: ' + frame);
                 this.wsConnected = true;
 
+                // 连接建立后主动拉取活跃任务（刷新页面后恢复状态）
+                api.getActiveTasks().then(resp => {
+                    console.log('[WS] Active tasks loaded:', resp.data?.length);
+                    if (resp.data && Array.isArray(resp.data)) {
+                        resp.data.forEach((task: any) => {
+                            if (task.status === 'RUNNING_EDGE' || task.status === 'RUNNING_CLOUD' || task.status === 'RUNNING_SPLIT') {
+                                taskStore.addActiveTask(task);
+                            } else if (task.status === 'QUEUED' || task.status === 'DISPATCHING') {
+                                taskStore.addActiveTask(task);
+                            }
+                        });
+                    }
+                }).catch(err => {
+                    console.error('[WS] Failed to fetch active tasks:', err.response?.status, err.response?.data);
+                });
+
+                // 连接建立后主动拉取节点列表（初始化时恢复节点状态）
+                api.getNodes().then(resp => {
+                    console.log('[WS] Nodes loaded:', resp.data);
+                    if (resp.data && Array.isArray(resp.data)) {
+                        nodeStore.setNodes(resp.data);
+                    }
+                }).catch(err => {
+                    console.error('[WS] Failed to fetch nodes:', err.response?.status, err.response?.data);
+                });
+
                 this.stompClient?.subscribe('/topic/nodes', (msg) => {
                     if (msg.body) {
                         try {
@@ -56,6 +83,8 @@ export const useWsStore = defineStore('ws', {
                                 taskStore.removeStealEvent(task.id);
                                 taskStore.removeActiveTask(task.id);
                                 taskStore.addCompletedTask(task);
+                            } else if (task.status === 'QUEUED' || task.status === 'DISPATCHING') {
+                                taskStore.addActiveTask(task);
                             }
                         } catch (e) { console.error('WS Task parse error', e) }
                     }

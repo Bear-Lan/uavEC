@@ -10,7 +10,9 @@ import { useAppStore } from './store/appStore'
 
 const appStore = useAppStore()
 
-onMounted(() => {
+onMounted(async () => {
+  // 先恢复登录会话，再初始化 WebSocket（需要认证 token）
+  await appStore.restoreSession()
   appStore.initWebSocket()
 })
 </script>

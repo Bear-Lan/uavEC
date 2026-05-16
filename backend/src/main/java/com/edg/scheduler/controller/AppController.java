@@ -77,6 +77,16 @@ public class AppController {
     }
 
     /**
+     * 获取所有活跃/排队任务
+     *
+     * @return 当前正在执行或排队的任务列表
+     */
+    @GetMapping("/tasks/active")
+    public ResponseEntity<List<TaskInfo>> getActiveTasks() {
+        return ResponseEntity.ok(metricsService.getActiveTasks());
+    }
+
+    /**
      * 提交单个任务
      *
      * @param task 任务信息（JSON格式）
