@@ -169,6 +169,7 @@ public class TaskService {
                 task.setAssignedUavId(null);
                 taskRepository.save(task);  // 同步数据库状态
                 queue.addFirst(task);
+                messagingTemplate.convertAndSend("/topic/tasks", task);  // 广播任务状态更新
             }
         }
     }
@@ -206,6 +207,7 @@ public class TaskService {
                 taskRepository.save(task);
 
                 redissonClient.getDeque(TASK_QUEUE_KEY).addLast(task);
+                messagingTemplate.convertAndSend("/topic/tasks", task);  // 广播任务状态更新
                 recovered++;
                 log.info("从宕机节点 {} 恢复任务 {}", task.getId(), nodeId);
             }
@@ -283,6 +285,7 @@ public class TaskService {
                     taskRepository.save(task);
 
                     redissonClient.getDeque(TASK_QUEUE_KEY).addFirst(task);
+                    messagingTemplate.convertAndSend("/topic/tasks", task);  // 广播任务状态更新
                     requeued++;
                     log.info("RTH返航迁移: 未找到任务 {} 的邻居节点，强制高优先级重排队.",
                             task.getId());
@@ -420,7 +423,9 @@ public class TaskService {
             redissonClient.getDeque(TASK_QUEUE_KEY).addLast(task);
             taskRepository.save(task);  // 持久化到数据库
             log.info("Task {} requeued due to cluster rollback", task.getId());
+
+            // 广播每个任务的状态更新到 WebSocket
+            messagingTemplate.convertAndSend("/topic/tasks", task);
         }
-        messagingTemplate.convertAndSend("/topic/tasks", tasksToRequeue.size() + " tasks rolled back");
     }
 }
