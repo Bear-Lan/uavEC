@@ -227,9 +227,14 @@ public class DispatchService {
                 task.getTaskName(), formatInt(task.getDataSize()),
                 edgeRatio * 100, cloudRatio * 100);
 
-        task.setAssignedUavId(selectedNode.getId() + " & CLOUD");
+        task.setAssignedUavId(selectedNode.getId());
         task.setStatus("RUNNING_SPLIT");
         task.setStartTime(System.currentTimeMillis());
+
+        // 立即保存任务状态
+        taskRepository.save(task);
+
+        redissonClient.getMap("task:active").put(task.getId(), task);
 
         // 计算距离和带宽
         double distance = calculateDistance(selectedNode.getX(), selectedNode.getY(), task.getOriginX(), task.getOriginY());
@@ -259,7 +264,7 @@ public class DispatchService {
         // 更新追踪日志
         TaskTraceLog traceLog = traceLogRepository.findByTaskId(task.getId());
         if (traceLog != null) {
-            traceLog.setAssignedUavId(selectedNode.getId() + " & CLOUD");
+            traceLog.setAssignedUavId(selectedNode.getId());
             traceLog.setTaskName(task.getTaskName());
             traceLog.setExecutionStartTime(System.currentTimeMillis() + transmissionDelay);
             traceLog.setTxLatency(transmissionDelay);
@@ -320,6 +325,9 @@ public class DispatchService {
         task.setStartTime(System.currentTimeMillis());
 
         redissonClient.getMap("task:active").put(task.getId(), task);
+
+        // 立即保存任务状态到数据库
+        taskRepository.save(task);
 
         log.info("任务 {} 使用调度算法分发到节点 {}", task.getTaskName(), selectedNode.getId());
 
@@ -384,6 +392,9 @@ public class DispatchService {
             fallbackTrace.setTxLatency(fallbackTxDelay);
             traceLogRepository.save(fallbackTrace);
         }
+
+        // 立即保存任务状态，确保不会丢失
+        taskRepository.save(task);
 
         // 投递到云端仿真服务处理
         cloudSimulationService.enqueueTask(task);
@@ -486,13 +497,9 @@ public class DispatchService {
                 // 从活跃字典中移除
                 redissonClient.getMap("task:active").remove(task.getId());
 
-                // 重新派生查询，以防该任务在进行至中途时，已经被其他饥饿的可用节点"窃取"接盘 (Work-Stealing)!
-                String actualNodeId = finalCheck.getAssignedUavId();
-                if (actualNodeId == null || !actualNodeId.startsWith("UAV")) {
-                    actualNodeId = node.getId(); // 如果发生诡异覆盖则降级回初始登记节点
-                }
-
-                nodeService.release(actualNodeId, task.getRequiredCpu(), task.getRequiredMemory());
+                // 始终从最初分配资源的节点释放（node是闭包中捕获的原始节点）
+                // 工作窃取会更新数据库中的assignedUavId，但不会改变原始分配节点
+                nodeService.release(node.getId(), task.getRequiredCpu(), task.getRequiredMemory());
                 broadcastState();
                 broadcastTaskUpdate(task);
             }

@@ -11,9 +11,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.UUID;
-import java.util.List;
-import java.util.ArrayList;
+import java.util.*;
 
 import org.redisson.api.RedissonClient;
 import org.redisson.api.RMap;
@@ -157,6 +155,7 @@ public class TaskService {
 
             if (result.isSuccess()) {
                 taskRepository.save(task);
+                messagingTemplate.convertAndSend("/topic/tasks", task);
             } else {
                 log.warn("任务 {} 分发失败: {}，重新放回队列", task.getTaskName(), result.getMessage());
                 // 添加退避延迟，避免连续忙等待
@@ -204,6 +203,8 @@ public class TaskService {
             if (s != null && (s.startsWith("RUNNING") || s.equals("DISPATCHING"))) {
                 task.setStatus("QUEUED");
                 task.setAssignedUavId(null);
+                nodeService.release(nodeId, task.getRequiredCpu(), task.getRequiredMemory());
+                redissonClient.getMap("task:active").remove(task.getId());
                 taskRepository.save(task);
 
                 redissonClient.getDeque(TASK_QUEUE_KEY).addLast(task);
@@ -250,11 +251,12 @@ public class TaskService {
         int requeued = 0;
 
         for (TaskInfo task : activeTasks) {
-            if ("RUNNING_EDGE".equals(task.getStatus())) {
+            if ("RUNNING_EDGE".equals(task.getStatus()) || "RUNNING_SPLIT".equals(task.getStatus())) {
                 boolean transferSuccess = false;
 
                 // 尝试寻找一个最优邻居节点进行无缝迁移
                 for (com.edg.scheduler.model.UAVNode neighbor : nodeService.getAllNodes()) {
+                    if (neighbor == null) continue;
                     if (neighbor.isOnline() && !neighbor.isRthMode() && !neighbor.getId().equals(nodeId)) {
                         if (neighbor.getAvailableCpu() >= task.getRequiredCpu() &&
                                 neighbor.getAvailableMemory() >= task.getRequiredMemory()) {
@@ -265,6 +267,9 @@ public class TaskService {
 
                             task.setAssignedUavId(neighbor.getId());
                             taskRepository.save(task);
+
+                            // 更新活跃映射以反映新的节点分配
+                            redissonClient.getMap("task:active").put(task.getId(), task);
 
                             log.info("RTH返航迁移: 任务 {} 从 {} 迁移到邻居节点 {}",
                                     task.getId(), nodeId, neighbor.getId());
@@ -350,6 +355,9 @@ public class TaskService {
                                         nodeService.allocate(idleNode.getId(), task.getRequiredCpu(),
                                                 task.getRequiredMemory());
 
+                                        // 更新活跃映射以反映新的节点分配
+                                        redissonClient.getMap("task:active").put(task.getId(), task);
+
                                         log.info("工作窃取: 闲置节点 {} 从负载节点 {} 窃取任务 {}",
                                                 idleNode.getId(), busyNode.getId(), task.getId());
 
@@ -401,31 +409,54 @@ public class TaskService {
      */
     @Transactional
     public void requeueAllActiveTasks() {
-        // 清空待处理队列，防止上一轮残留任务污染后续算法测试
-        org.redisson.api.RDeque<TaskInfo> queue = redissonClient.getDeque(TASK_QUEUE_KEY);
-        queue.clear();
+        // 不再清空队列，而是扫描数据库中状态异常的任务重新入队
+        // 这样可以恢复那些在队列中但因为各种原因丢失的任务
 
         RMap<String, TaskInfo> activeMap = redissonClient.getMap("task:active");
-        if (activeMap.isEmpty())
-            return;
+        List<TaskInfo> allTasks = taskRepository.findAll();
 
-        List<TaskInfo> tasksToRequeue = new ArrayList<>(activeMap.values());
-        for (TaskInfo task : tasksToRequeue) {
-            String uavId = task.getAssignedUavId();
-            if (uavId != null && !uavId.startsWith("CLOUD")) {
-                nodeService.release(uavId, task.getRequiredCpu(), task.getRequiredMemory());
+        int requeued = 0;
+        Set<String> dbTaskIds = new HashSet<>();
+
+        for (TaskInfo task : allTasks) {
+            dbTaskIds.add(task.getId());
+
+            // 处理状态为 RUNNING_* 但不在 activeMap 中的任务（异常任务）
+            if (task.getStatus() != null && task.getStatus().startsWith("RUNNING")) {
+                if (activeMap.get(task.getId()) == null) {
+                    // 任务状态是 RUNNING 但不在活跃映射中，说明已经丢失，重新排队
+                    // 先释放节点资源
+                    if (task.getAssignedUavId() != null) {
+                        nodeService.release(task.getAssignedUavId(), task.getRequiredCpu(), task.getRequiredMemory());
+                    }
+                    task.setStatus("QUEUED");
+                    task.setAssignedUavId(null);
+                    taskRepository.save(task);
+
+                    redissonClient.getDeque(TASK_QUEUE_KEY).addLast(task);
+                    messagingTemplate.convertAndSend("/topic/tasks", task);
+                    requeued++;
+                    log.info("Task {} recovered from orphaned state", task.getId());
+                }
             }
+        }
 
-            task.setStatus("QUEUED");
-            task.setAssignedUavId(null);
+        // 清理 task:active 中已不存在于数据库的任务（僵尸条目）
+        Set<String> redisTaskIds = activeMap.keySet();
+        int cleaned = 0;
+        for (String redisTaskId : redisTaskIds) {
+            if (!dbTaskIds.contains(redisTaskId)) {
+                activeMap.remove(redisTaskId);
+                cleaned++;
+                log.info("Cleaned stale task {} from task:active", redisTaskId);
+            }
+        }
 
-            activeMap.remove(task.getId());
-            redissonClient.getDeque(TASK_QUEUE_KEY).addLast(task);
-            taskRepository.save(task);  // 持久化到数据库
-            log.info("Task {} requeued due to cluster rollback", task.getId());
-
-            // 广播每个任务的状态更新到 WebSocket
-            messagingTemplate.convertAndSend("/topic/tasks", task);
+        if (requeued > 0) {
+            log.info("Recovered {} orphaned tasks", requeued);
+        }
+        if (cleaned > 0) {
+            log.info("Cleaned {} stale entries from task:active", cleaned);
         }
     }
 }

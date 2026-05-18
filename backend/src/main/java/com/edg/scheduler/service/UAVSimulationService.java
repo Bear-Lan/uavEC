@@ -218,6 +218,12 @@ public class UAVSimulationService {
             } catch (InterruptedException e) {
                 task.setStatus("FAILED");
                 Thread.currentThread().interrupt();
+                // 确保资源释放和task:active清理
+                taskRepository.save(task);
+                redissonClient.getMap("task:active").remove(task.getId());
+                nodeService.release(nodeId, task.getRequiredCpu(), task.getRequiredMemory());
+                broadcastState();
+                broadcastTaskUpdate(task);
                 return;
             }
 
@@ -225,6 +231,9 @@ public class UAVSimulationService {
             TaskInfo latestTask = taskRepository.findById(task.getId()).orElse(null);
             if (latestTask == null || !"RUNNING_EDGE".equals(latestTask.getStatus())) {
                 log.warn("任务 {} 在执行期间状态已变更，中止完成处理", task.getId());
+                // 状态已变更，说明可能被其他流程处理了，只需要清理本地资源
+                redissonClient.getMap("task:active").remove(task.getId());
+                nodeService.release(nodeId, task.getRequiredCpu(), task.getRequiredMemory());
                 return;
             }
 

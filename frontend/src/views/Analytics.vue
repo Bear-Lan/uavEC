@@ -22,10 +22,32 @@
           </div>
       </template>
 
+      <!-- KPI 健康状态指示器 -->
+      <div class="kpi-panel" style="margin-bottom: 15px;">
+        <div class="kpi-card" v-for="kpi in kpiCards" :key="kpi.label" :style="{ borderColor: kpi.color }">
+          <div class="kpi-icon" :style="{ backgroundColor: kpi.color + '22' }">
+            <span :style="{ color: kpi.color }">{{ kpi.icon }}</span>
+          </div>
+          <div class="kpi-content">
+            <div class="kpi-label">{{ kpi.label }}</div>
+            <div class="kpi-value" :style="{ color: kpi.color }">{{ kpi.value }}</div>
+          </div>
+          <div class="kpi-status" :class="kpi.statusClass">
+            <span v-if="kpi.status === 'danger'">⚠️ 异常</span>
+            <span v-else-if="kpi.status === 'warning'">⚡ 注意</span>
+            <span v-else>✅ 正常</span>
+          </div>
+        </div>
+      </div>
+
       <div class="dash-grid">
          <!-- 主对比分析图表 Main Comparative Chart -->
          <div class="main-chart-panel panel-dark">
-             <div class="panel-header">算法评估演进图 <span style="font-size:10px;color:#8b949e">- 支持框选缩放</span></div>
+             <div class="panel-header">
+               算法评估演进图
+               <span style="font-size:10px;color:#8b949e">- 支持框选缩放</span>
+               <el-tag v-if="latestAnomaly" type="danger" size="small" style="margin-left:10px">⚠️ 检测到异常数据</el-tag>
+             </div>
              <div ref="chartRef" class="chart-container" style="width: 100%; height: 400px; padding: 10px;"></div>
          </div>
       </div>
@@ -44,7 +66,7 @@
            <el-card class="cyber-card control-card">
               <template #header><div class="cyber-header"><span class="cyber-title">资源消耗矩阵 / MATRIX</span></div></template>
               <div ref="matrixChartRef" style="height: 250px; width: 100%;"></div>
-          </el-card>
+           </el-card>
        </el-col>
     </el-row>
 
@@ -52,7 +74,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
 import * as echarts from 'echarts'
 import { useAppStore } from '../store/appStore'
 import { api } from '../services/api'
@@ -69,6 +91,68 @@ let matrixChart: echarts.ECharts | null = null
 
 const currentMetric = ref('latency')
 const exportLoading = ref(false)
+const latestAnomaly = ref(false)
+
+// KPI 卡片配置
+const kpiCards = computed(() => {
+    const hist = appStore.performanceStats.history
+    const latest = hist.length > 0 ? hist[hist.length - 1] : null
+
+    // 检测异常：延迟突增、成功率下降、能耗异常
+    let latencyAnomaly = false
+    let successAnomaly = false
+    let energyAnomaly = false
+
+    if (hist.length >= 3) {
+        const recent = hist.slice(-3)
+        const avgLatency = recent.reduce((s, h) => s + (h.latency?.greedy || 0), 0) / recent.length
+        const maxLatency = Math.max(...recent.map((h: any) => h.latency?.greedy || 0))
+        latencyAnomaly = maxLatency > avgLatency * 2 && maxLatency > 5000
+
+        const minSuccess = Math.min(...recent.map((h: any) => h.success?.greedy || 100))
+        successAnomaly = minSuccess < 80
+
+        const maxEnergy = Math.max(...recent.map((h: any) => h.energy?.greedy || 0))
+        energyAnomaly = maxEnergy > 500
+    }
+
+    latestAnomaly.value = latencyAnomaly || successAnomaly || energyAnomaly
+
+    return [
+        {
+            label: '延迟异常',
+            icon: '⏱️',
+            value: latest ? `${(latest.latency?.greedy || 0).toFixed(0)} ms` : '--',
+            color: latencyAnomaly ? '#f85149' : '#3fb950',
+            status: latencyAnomaly ? 'danger' : 'normal',
+            statusClass: latencyAnomaly ? 'status-danger' : 'status-ok'
+        },
+        {
+            label: '成功率',
+            icon: '📊',
+            value: latest ? `${(latest.success?.greedy || 0).toFixed(1)} %` : '--',
+            color: successAnomaly ? '#f85149' : '#3fb950',
+            status: successAnomaly ? 'danger' : 'normal',
+            statusClass: successAnomaly ? 'status-danger' : 'status-ok'
+        },
+        {
+            label: '能耗指数',
+            icon: '⚡',
+            value: latest ? `${(latest.energy?.greedy || 0).toFixed(0)} J` : '--',
+            color: energyAnomaly ? '#d29922' : '#3fb950',
+            status: energyAnomaly ? 'warning' : 'normal',
+            statusClass: energyAnomaly ? 'status-warning' : 'status-ok'
+        },
+        {
+            label: '任务吞吐',
+            icon: '🚀',
+            value: latest?.meta?.taskCount ? `${latest.meta.taskCount} 个/批` : '--',
+            color: '#58a6ff',
+            status: 'normal',
+            statusClass: 'status-ok'
+        }
+    ]
+})
 
 const downloadCsv = async () => {
   exportLoading.value = true
@@ -348,5 +432,71 @@ onUnmounted(() => {
    color: #c9d1d9;
    border-bottom: 1px solid #21262d;
    letter-spacing: 0.5px;
+   display: flex;
+   align-items: center;
+}
+.kpi-panel {
+   display: flex;
+   gap: 12px;
+   flex-wrap: wrap;
+}
+.kpi-card {
+   display: flex;
+   align-items: center;
+   gap: 12px;
+   padding: 12px 16px;
+   background: #0d1117;
+   border: 1px solid #30363d;
+   border-radius: 8px;
+   min-width: 180px;
+   flex: 1;
+   transition: all 0.3s;
+}
+.kpi-card:hover {
+   background: #161b22;
+}
+.kpi-icon {
+   width: 40px;
+   height: 40px;
+   border-radius: 8px;
+   display: flex;
+   align-items: center;
+   justify-content: center;
+   font-size: 20px;
+}
+.kpi-content {
+   flex: 1;
+}
+.kpi-label {
+   font-size: 11px;
+   color: #8b949e;
+   margin-bottom: 2px;
+}
+.kpi-value {
+   font-size: 18px;
+   font-weight: 700;
+   font-family: 'JetBrains Mono', monospace;
+}
+.kpi-status {
+   font-size: 10px;
+   padding: 2px 8px;
+   border-radius: 10px;
+}
+.status-ok {
+   background: rgba(63, 185, 80, 0.15);
+   color: #3fb950;
+}
+.status-danger {
+   background: rgba(248, 81, 73, 0.15);
+   color: #f85149;
+   animation: pulse-danger 1.5s infinite;
+}
+.status-warning {
+   background: rgba(210, 153, 34, 0.15);
+   color: #d29922;
+}
+@keyframes pulse-danger {
+   0%, 100% { opacity: 1; }
+   50% { opacity: 0.5; }
 }
 </style>

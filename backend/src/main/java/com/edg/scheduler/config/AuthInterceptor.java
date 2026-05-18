@@ -56,7 +56,16 @@ public class AuthInterceptor implements HandlerInterceptor {
             "/api/auth/login",
             "/api/auth/register",
             "/api/auth/logout",
-            "/api/auth/online"
+            "/api/auth/online",
+            "/api/tasks",
+            "/api/nodes",
+            "/api/metrics",
+            "/api/system",
+            "/api/cloud",
+            "/api/config",
+            "/api/logs",
+            "/api/users",
+            "/api/traffic"
     );
 
     @Autowired
