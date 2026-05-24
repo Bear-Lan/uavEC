@@ -75,8 +75,14 @@ export const api = {
     getBatchMetrics(batchId: string) {
         return axios.get(`${API_BASE}/metrics/${batchId}`)
     },
+    getBatchDetailAnalytics(batchId: string) {
+        return axios.get(`${API_BASE}/metrics/${batchId}/detail`)
+    },
     getMetricsHistory() {
         return axios.get(`${API_BASE}/metrics/history`)
+    },
+    syncAllBatchMetrics() {
+        return axios.post(`${API_BASE}/metrics/sync`)
     },
 
     // 分布式链路追踪

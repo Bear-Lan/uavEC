@@ -308,8 +308,11 @@ public class NodeService {
             for (Map.Entry<String, UAVNode> entry : snapshotNodes.entrySet()) {
                 nodes.put(entry.getKey(), new UAVNode(entry.getValue())); // Deep copy again so subsequent restores work
             }
-            // Clear current task assignments from tasks in Redis queue
-            taskService.requeueAllActiveTasks();
+            // 清空 Redis 任务队列和活跃映射，防止上一轮遗留数据污染下一轮算法对比
+            redissonClient.getDeque("scheduler:task_queue").clear();
+            redissonClient.getMap("task:active").clear();
+            // 同步数据库中任务状态，重置为初始待提交
+            taskService.resetAllTasksForSnapshot();
             log.info("已从快照恢复集群状态.");
             messagingTemplate.convertAndSend("/topic/nodes", getAllNodes());
         } finally {

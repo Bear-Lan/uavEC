@@ -289,13 +289,43 @@ public class AppController {
     }
 
     /**
+     * 获取指定批次的详细分析数据（支持单次批次即时分析）
+     *
+     * @param batchId 批次ID
+     * @return 批次详情分析（包含任务列表、节点分布、类型分布、进度时间线、分位数等）
+     *         如果批次不存在返回404
+     */
+    @GetMapping("/metrics/{batchId}/detail")
+    public ResponseEntity<Map<String, Object>> getBatchDetailAnalytics(@PathVariable String batchId) {
+        Map<String, Object> result = metricsService.getBatchDetailAnalytics(batchId);
+        if ("NOT_FOUND".equals(result.get("status"))) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(result);
+    }
+
+    /**
      * 获取历史性能指标
      *
      * @return 所有历史批次指标汇总列表
      */
     @GetMapping("/metrics/history")
     public ResponseEntity<List<BatchMetricsSummary>> getMetricsHistory() {
+        // 先同步所有批次汇总数据（确保新完成的批次也被记录）
+        metricsService.syncAllBatchMetrics();
         return ResponseEntity.ok(metricsService.getMetricsHistory());
+    }
+
+    /**
+     * 手动同步所有批次的性能指标汇总
+     * 解决单次批次提交后历史图表无数据的问题
+     *
+     * @return 同步了多少个批次
+     */
+    @PostMapping("/metrics/sync")
+    public ResponseEntity<Map<String, Object>> syncAllBatchMetrics() {
+        int synced = metricsService.syncAllBatchMetrics();
+        return ResponseEntity.ok(Map.of("synced", synced, "message", "成功同步 " + synced + " 个批次汇总记录"));
     }
 
     /**

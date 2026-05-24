@@ -1,30 +1,28 @@
 <template>
   <div class="analytics-container">
+    <!-- 批次选择 + KPI 总览 -->
     <el-card class="cyber-card control-card" shadow="always">
-       <template #header>
-          <div class="card-header cyber-header" style="justify-content: space-between;">
-             <div>
-                <span class="cyber-title" style="margin-right: 15px">多维效能基准分析 / MULTI-DIMENSIONAL BENCHMARK</span>
-                <el-tag type="info" effect="dark" size="small">Data Sync: {{ appStore.performanceStats.history.length }} 批次记录</el-tag>
-             </div>
-
-             <div style="display: flex; align-items: center; gap: 12px;">
-                 <el-radio-group v-model="currentMetric" size="small" @change="renderChart">
-                   <el-radio-button label="latency">调度延迟</el-radio-button>
-                   <el-radio-button label="energy">节点能耗</el-radio-button>
-                   <el-radio-button label="bandwidth">带宽消耗</el-radio-button>
-                   <el-radio-button label="success">成功率</el-radio-button>
-                 </el-radio-group>
-                 <el-button size="small" type="success" class="cyber-btn" @click="downloadCsv" :loading="exportLoading">
-                   💾 导出基准数据 (CSV)
-                 </el-button>
-              </div>
+      <template #header>
+        <div class="card-header cyber-header" style="justify-content: space-between;">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <span class="cyber-title">多维效能基准分析 / BENCHMARK</span>
+            <el-select v-model="selectedBatchId" placeholder="选择批次（最近批次优先）" size="small" style="width: 260px;" @change="onBatchSelected">
+              <el-option v-for="b in availableBatches" :key="b.id" :label="b.label" :value="b.id" />
+            </el-select>
+            <el-switch v-if="batchDetailData && batchDetailData.status === 'PROCESSING'" v-model="autoRefresh" active-text="实时" />
           </div>
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <el-tag type="info" effect="dark" size="small">{{ selectedBatchId || '未选择批次' }}</el-tag>
+            <el-button size="small" type="success" class="cyber-btn" @click="downloadCsv" :loading="exportLoading">
+              💾 导出CSV
+            </el-button>
+          </div>
+        </div>
       </template>
 
-      <!-- KPI 健康状态指示器 -->
-      <div class="kpi-panel" style="margin-bottom: 15px;">
-        <div class="kpi-card" v-for="kpi in kpiCards" :key="kpi.label" :style="{ borderColor: kpi.color }">
+      <!-- 批次级 KPI 指示器 -->
+      <div class="kpi-panel" style="margin-bottom: 10px;">
+        <div class="kpi-card" v-for="kpi in batchKpiCards" :key="kpi.label" :style="{ borderColor: kpi.color }">
           <div class="kpi-icon" :style="{ backgroundColor: kpi.color + '22' }">
             <span :style="{ color: kpi.color }">{{ kpi.icon }}</span>
           </div>
@@ -32,132 +30,397 @@
             <div class="kpi-label">{{ kpi.label }}</div>
             <div class="kpi-value" :style="{ color: kpi.color }">{{ kpi.value }}</div>
           </div>
-          <div class="kpi-status" :class="kpi.statusClass">
-            <span v-if="kpi.status === 'danger'">⚠️ 异常</span>
-            <span v-else-if="kpi.status === 'warning'">⚡ 注意</span>
-            <span v-else>✅ 正常</span>
+        </div>
+        <!-- PROCESSING 进度条 -->
+        <div v-if="batchDetailData && batchDetailData.status === 'PROCESSING'" class="kpi-card" style="border-color: #58a6ff; flex: 2; min-width: 200px;">
+          <div class="kpi-content" style="width: 100%;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+              <span style="color: #8b949e; font-size: 11px;">完成进度</span>
+              <span style="color: #58a6ff; font-size: 11px;">{{ batchDetailData.completedTasks }}/{{ batchDetailData.totalTasks }}</span>
+            </div>
+            <el-progress :percentage="batchDetailData.totalTasks > 0 ? Math.round(batchDetailData.completedTasks / batchDetailData.totalTasks * 100) : 0" :stroke-width="6" :color="progressColor" style="margin-top: 4px;" />
           </div>
         </div>
       </div>
 
-      <div class="dash-grid">
-         <!-- 主对比分析图表 Main Comparative Chart -->
-         <div class="main-chart-panel panel-dark">
-             <div class="panel-header">
-               算法评估演进图
-               <span style="font-size:10px;color:#8b949e">- 支持框选缩放</span>
-               <el-tag v-if="latestAnomaly" type="danger" size="small" style="margin-left:10px">⚠️ 检测到异常数据</el-tag>
-             </div>
-             <div ref="chartRef" class="chart-container" style="width: 100%; height: 400px; padding: 10px;"></div>
-         </div>
+      <div v-if="!selectedBatchId" style="text-align: center; padding: 30px; color: #8b949e;">
+        请从上方选择批次以查看效能分析
       </div>
     </el-card>
 
     <br/>
-    <!-- 次级辅助度量指标 Secondary Analysis -->
-    <el-row :gutter="15">
-       <el-col :span="12">
-          <el-card class="cyber-card control-card">
-              <template #header><div class="cyber-header"><span class="cyber-title">综合评价体系 / RADAR</span></div></template>
-              <div ref="radarChartRef" style="height: 250px; width: 100%;"></div>
+    <!-- 批次分析图表区 -->
+    <div v-if="batchDetailData">
+      <el-row :gutter="15" style="margin-bottom: 15px;">
+        <!-- 任务延迟散点图 -->
+        <el-col :span="14">
+          <el-card class="panel-dark" style="background: #06080a; border: 1px solid #21262d;">
+            <template #header>
+              <div style="font-size: 12px; color: #c9d1d9; font-weight: 600;">任务延迟分布（优先级 vs 延迟）</div>
+            </template>
+            <div ref="latencyScatterRef" style="height: 260px; width: 100%;"></div>
           </el-card>
-       </el-col>
-       <el-col :span="12">
-           <el-card class="cyber-card control-card">
-              <template #header><div class="cyber-header"><span class="cyber-title">资源消耗矩阵 / MATRIX</span></div></template>
-              <div ref="matrixChartRef" style="height: 250px; width: 100%;"></div>
-           </el-card>
-       </el-col>
-    </el-row>
+        </el-col>
+        <!-- 任务列表摘要 -->
+        <el-col :span="10">
+          <el-card class="panel-dark" style="background: #06080a; border: 1px solid #21262d;">
+            <template #header>
+              <div style="font-size: 12px; color: #c9d1d9; font-weight: 600;">
+                任务列表 ({{ taskListPreview.length }}/{{ batchDetailData.totalTasks }})
+              </div>
+            </template>
+            <div style="max-height: 260px; overflow-y: auto;">
+              <div v-for="task in taskListPreview" :key="task.id" class="task-list-item">
+                <span :style="{ color: task.status === 'COMPLETED' ? '#3fb950' : task.status === 'FAILED' ? '#f85149' : '#d29922' }">
+                  {{ task.status === 'COMPLETED' ? '✅' : task.status === 'FAILED' ? '❌' : '⏳' }}
+                </span>
+                <span style="color: #c9d1d9; font-size: 11px; margin-left: 6px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ task.name }}</span>
+                <span style="color: #8b949e; font-size: 10px; margin-left: 6px;">{{ task.latency || 0 }}ms</span>
+              </div>
+              <div v-if="!taskListPreview.length" style="color: #8b949e; text-align: center; padding: 20px; font-size: 12px;">
+                暂无任务数据
+              </div>
+            </div>
+          </el-card>
+        </el-col>
+      </el-row>
 
+      <el-row :gutter="15" style="margin-bottom: 15px;">
+        <!-- 节点任务分布 -->
+        <el-col :span="8">
+          <el-card class="panel-dark" style="background: #06080a; border: 1px solid #21262d;">
+            <template #header><div style="font-size: 12px; color: #c9d1d9; font-weight: 600;">节点任务分布</div></template>
+            <div ref="nodeDistChartRef" style="height: 200px; width: 100%;"></div>
+          </el-card>
+        </el-col>
+        <!-- 任务类型分布 -->
+        <el-col :span="8">
+          <el-card class="panel-dark" style="background: #06080a; border: 1px solid #21262d;">
+            <template #header><div style="font-size: 12px; color: #c9d1d9; font-weight: 600;">任务类型分布</div></template>
+            <div ref="typeDistChartRef" style="height: 200px; width: 100%;"></div>
+          </el-card>
+        </el-col>
+        <!-- 延迟分位数 -->
+        <el-col :span="8">
+          <el-card class="panel-dark" style="background: #06080a; border: 1px solid #21262d;">
+            <template #header><div style="font-size: 12px; color: #c9d1d9; font-weight: 600;">延迟分位数 (ms)</div></template>
+            <div ref="percentileChartRef" style="height: 200px; width: 100%;"></div>
+          </el-card>
+        </el-col>
+      </el-row>
+
+      <!-- 能耗与延迟累积分布 -->
+      <el-row :gutter="15">
+        <el-col :span="12">
+          <el-card class="panel-dark" style="background: #06080a; border: 1px solid #21262d;">
+            <template #header><div style="font-size: 12px; color: #c9d1d9; font-weight: 600;">任务能耗分布</div></template>
+            <div ref="energyScatterRef" style="height: 200px; width: 100%;"></div>
+          </el-card>
+        </el-col>
+        <el-col :span="12">
+          <el-card class="panel-dark" style="background: #06080a; border: 1px solid #21262d;">
+            <template #header><div style="font-size: 12px; color: #c9d1d9; font-weight: 600;">节点完成时序</div></template>
+            <div ref="timelineChartRef" style="height: 200px; width: 100%;"></div>
+          </el-card>
+        </el-col>
+      </el-row>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
+import { ref, onMounted, onUnmounted, watch, computed, nextTick } from 'vue'
 import * as echarts from 'echarts'
-import { useAppStore } from '../store/appStore'
 import { api } from '../services/api'
 import { ElMessage } from 'element-plus'
 
-const appStore = useAppStore()
-const chartRef = ref<HTMLElement | null>(null)
-const radarChartRef = ref<HTMLElement | null>(null)
-const matrixChartRef = ref<HTMLElement | null>(null)
-
-let chart: echarts.ECharts | null = null
-let radarChart: echarts.ECharts | null = null
-let matrixChart: echarts.ECharts | null = null
-
-const currentMetric = ref('latency')
 const exportLoading = ref(false)
-const latestAnomaly = ref(false)
 
-// KPI 卡片配置
-const kpiCards = computed(() => {
-    const hist = appStore.performanceStats.history
-    const latest = hist.length > 0 ? hist[hist.length - 1] : null
+// ===================== 批次详情分析 =====================
+const selectedBatchId = ref('')
+const batchLoading = ref(false)
+const batchDetailData = ref<any>(null)
+const autoRefresh = ref(false)
 
-    // 检测异常：延迟突增、成功率下降、能耗异常
-    let latencyAnomaly = false
-    let successAnomaly = false
-    let energyAnomaly = false
+interface BatchOption { id: string; label: string }
+const availableBatches = ref<BatchOption[]>([])
 
-    if (hist.length >= 3) {
-        const recent = hist.slice(-3)
-        const avgLatency = recent.reduce((s, h) => s + (h.latency?.greedy || 0), 0) / recent.length
-        const maxLatency = Math.max(...recent.map((h: any) => h.latency?.greedy || 0))
-        latencyAnomaly = maxLatency > avgLatency * 2 && maxLatency > 5000
+let nodeDistChart: echarts.ECharts | null = null
+let typeDistChart: echarts.ECharts | null = null
+let percentileChart: echarts.ECharts | null = null
+let latencyScatterChart: echarts.ECharts | null = null
+let energyScatterChart: echarts.ECharts | null = null
+let timelineChart: echarts.ECharts | null = null
+let autoRefreshTimer: ReturnType<typeof setInterval> | null = null
 
-        const minSuccess = Math.min(...recent.map((h: any) => h.success?.greedy || 100))
-        successAnomaly = minSuccess < 80
+const nodeDistChartRef = ref<HTMLElement | null>(null)
+const typeDistChartRef = ref<HTMLElement | null>(null)
+const percentileChartRef = ref<HTMLElement | null>(null)
+const latencyScatterRef = ref<HTMLElement | null>(null)
+const energyScatterRef = ref<HTMLElement | null>(null)
+const timelineChartRef = ref<HTMLElement | null>(null)
 
-        const maxEnergy = Math.max(...recent.map((h: any) => h.energy?.greedy || 0))
-        energyAnomaly = maxEnergy > 500
-    }
+const progressColor = computed(() => {
+    if (!batchDetailData.value) return '#58a6ff'
+    const pct = batchDetailData.value.totalTasks > 0
+        ? batchDetailData.value.completedTasks / batchDetailData.value.totalTasks : 0
+    if (pct >= 1) return '#3fb950'
+    if (pct >= 0.5) return '#d29922'
+    return '#f85149'
+})
 
-    latestAnomaly.value = latencyAnomaly || successAnomaly || energyAnomaly
+const taskListPreview = computed(() => {
+    if (!batchDetailData.value?.taskList) return []
+    return batchDetailData.value.taskList.slice(0, 30)
+})
 
+const batchKpiCards = computed(() => {
+    const agg = batchDetailData.value?.aggregate || {}
     return [
         {
-            label: '延迟异常',
+            label: '平均任务处理时长',
             icon: '⏱️',
-            value: latest ? `${(latest.latency?.greedy || 0).toFixed(0)} ms` : '--',
-            color: latencyAnomaly ? '#f85149' : '#3fb950',
-            status: latencyAnomaly ? 'danger' : 'normal',
-            statusClass: latencyAnomaly ? 'status-danger' : 'status-ok'
+            value: agg.avgLatency ? `${Math.round(Number(agg.avgLatency))} ms` : '--',
+            color: '#58a6ff'
+        },
+        {
+            label: '总能耗',
+            icon: '⚡',
+            value: agg.totalEnergy ? `${Math.round(Number(agg.totalEnergy))} J` : '--',
+            color: '#d29922'
         },
         {
             label: '成功率',
             icon: '📊',
-            value: latest ? `${(latest.success?.greedy || 0).toFixed(1)} %` : '--',
-            color: successAnomaly ? '#f85149' : '#3fb950',
-            status: successAnomaly ? 'danger' : 'normal',
-            statusClass: successAnomaly ? 'status-danger' : 'status-ok'
+            value: agg.successRate != null ? `${Number(agg.successRate).toFixed(1)} %` : '--',
+            color: agg.successRate >= 80 ? '#3fb950' : '#f85149'
         },
         {
-            label: '能耗指数',
-            icon: '⚡',
-            value: latest ? `${(latest.energy?.greedy || 0).toFixed(0)} J` : '--',
-            color: energyAnomaly ? '#d29922' : '#3fb950',
-            status: energyAnomaly ? 'warning' : 'normal',
-            statusClass: energyAnomaly ? 'status-warning' : 'status-ok'
-        },
-        {
-            label: '任务吞吐',
+            label: '总任务',
             icon: '🚀',
-            value: latest?.meta?.taskCount ? `${latest.meta.taskCount} 个/批` : '--',
-            color: '#58a6ff',
-            status: 'normal',
-            statusClass: 'status-ok'
+            value: batchDetailData.value?.totalTasks ? `${batchDetailData.value.totalTasks} 个` : '--',
+            color: '#a371f7'
         }
     ]
 })
 
+const onBatchSelected = async () => {
+    if (!selectedBatchId.value) {
+        batchDetailData.value = null
+        return
+    }
+    await loadBatchDetail()
+}
+
+const loadBatchDetail = async () => {
+    if (!selectedBatchId.value) return
+    batchLoading.value = true
+    try {
+        const resp = await api.getBatchDetailAnalytics(selectedBatchId.value)
+        batchDetailData.value = resp.data
+        await nextTick()
+        initBatchCharts()
+        renderBatchCharts()
+    } catch (e) {
+        console.error('Failed to load batch detail', e)
+        ElMessage.error('加载批次详情失败')
+    } finally {
+        batchLoading.value = false
+    }
+}
+
+const initBatchCharts = () => {
+    if (nodeDistChartRef.value && !nodeDistChart) {
+        nodeDistChart = echarts.init(nodeDistChartRef.value, 'dark')
+    }
+    if (typeDistChartRef.value && !typeDistChart) {
+        typeDistChart = echarts.init(typeDistChartRef.value, 'dark')
+    }
+    if (percentileChartRef.value && !percentileChart) {
+        percentileChart = echarts.init(percentileChartRef.value, 'dark')
+    }
+    if (latencyScatterRef.value && !latencyScatterChart) {
+        latencyScatterChart = echarts.init(latencyScatterRef.value, 'dark')
+    }
+    if (energyScatterRef.value && !energyScatterChart) {
+        energyScatterChart = echarts.init(energyScatterRef.value, 'dark')
+    }
+    if (timelineChartRef.value && !timelineChart) {
+        timelineChart = echarts.init(timelineChartRef.value, 'dark')
+    }
+}
+
+const renderBatchCharts = () => {
+    if (!batchDetailData.value) return
+    const data = batchDetailData.value
+
+    // 节点分布饼图
+    if (nodeDistChart && data.nodeDistribution) {
+        const nodes = Object.entries(data.nodeDistribution)
+        nodeDistChart.setOption({
+            backgroundColor: 'transparent',
+            tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+            series: [{
+                type: 'pie',
+                radius: ['35%', '65%'],
+                data: nodes.map(([name, value], i) => ({
+                    name, value,
+                    itemStyle: { color: ['#f85149', '#d29922', '#3fb950', '#58a6ff', '#a371f7'][i % 5] }
+                }))
+            }]
+        })
+    }
+
+    // 类型分布柱状图
+    if (typeDistChart && data.typeDistribution) {
+        const types = Object.entries(data.typeDistribution)
+        typeDistChart.setOption({
+            backgroundColor: 'transparent',
+            tooltip: { trigger: 'axis' },
+            grid: { top: 8, bottom: 8, left: 5, right: 5 },
+            xAxis: { type: 'category', data: types.map(t => t[0]), axisLabel: { fontSize: 9, color: '#8b949e' } },
+            yAxis: { type: 'value', splitLine: { show: false }, axisLabel: { fontSize: 9, color: '#8b949e' } },
+            series: [{ type: 'bar', data: types.map(t => t[1]), itemStyle: { color: '#3b82f6' } }]
+        })
+    }
+
+    // 延迟分位数
+    if (percentileChart && data.percentile) {
+        const p = data.percentile
+        percentileChart.setOption({
+            backgroundColor: 'transparent',
+            tooltip: { trigger: 'axis' },
+            grid: { top: 8, bottom: 8, left: 5, right: 5 },
+            xAxis: { type: 'category', data: ['p50', 'p90', 'p99'], axisLabel: { fontSize: 10, color: '#8b949e' } },
+            yAxis: { type: 'value', splitLine: { lineStyle: { color: '#21262d' } }, axisLabel: { fontSize: 9, color: '#8b949e' } },
+            series: [{
+                type: 'bar',
+                data: [p.p50 || 0, p.p90 || 0, p.p99 || 0],
+                itemStyle: { color: (params: any) => ['#3fb950', '#d29922', '#f85149'][params.dataIndex] }
+            }]
+        })
+    }
+
+    // 延迟散点图（优先级 vs 延迟）
+    if (latencyScatterChart && data.taskList) {
+        const scatterData = data.taskList
+            .filter((t: any) => t.latency > 0)
+            .map((t: any) => ({
+                value: [t.priority || 0, t.latency, t.name || t.id],
+                itemStyle: { color: t.status === 'COMPLETED' ? '#3fb950' : t.status === 'FAILED' ? '#f85149' : '#d29922' }
+            }))
+        latencyScatterChart.setOption({
+            backgroundColor: 'transparent',
+            tooltip: {
+                trigger: 'item',
+                formatter: (params: any) => `${params.data.name}<br/>优先级: ${params.data.value[0]}<br/>延迟: ${params.data.value[1]} ms`
+            },
+            grid: { top: 10, bottom: 30, left: 50, right: 15 },
+            xAxis: { type: 'value', name: '优先级', nameTextStyle: { fontSize: 10, color: '#8b949e' }, splitLine: { lineStyle: { color: '#21262d' } }, axisLabel: { fontSize: 9, color: '#8b949e' } },
+            yAxis: { type: 'value', name: '延迟 (ms)', nameTextStyle: { fontSize: 10, color: '#8b949e' }, splitLine: { lineStyle: { color: '#21262d' } }, axisLabel: { fontSize: 9, color: '#8b949e' } },
+            series: [{ type: 'scatter', symbolSize: 8, data: scatterData }]
+        })
+    }
+
+    // 能耗散点图（数据大小 vs 能耗）
+    if (energyScatterChart && data.taskList) {
+        const scatterData = data.taskList
+            .filter((t: any) => t.energy > 0)
+            .map((t: any) => ({
+                value: [t.dataSize || 0, t.energy, t.name || t.id],
+                itemStyle: { color: t.status === 'COMPLETED' ? '#3fb950' : t.status === 'FAILED' ? '#f85149' : '#d29922' }
+            }))
+        energyScatterChart.setOption({
+            backgroundColor: 'transparent',
+            tooltip: {
+                trigger: 'item',
+                formatter: (params: any) => `${params.data.name}<br/>数据: ${params.data.value[0]} MB<br/>能耗: ${params.data.value[1]} J`
+            },
+            grid: { top: 10, bottom: 30, left: 50, right: 15 },
+            xAxis: { type: 'value', name: '数据大小 (MB)', nameTextStyle: { fontSize: 10, color: '#8b949e' }, splitLine: { lineStyle: { color: '#21262d' } }, axisLabel: { fontSize: 9, color: '#8b949e' } },
+            yAxis: { type: 'value', name: '能耗 (J)', nameTextStyle: { fontSize: 10, color: '#8b949e' }, splitLine: { lineStyle: { color: '#21262d' } }, axisLabel: { fontSize: 9, color: '#8b949e' } },
+            series: [{ type: 'scatter', symbolSize: 8, data: scatterData }]
+        })
+    }
+
+    // 节点完成时序（每个节点的任务完成时间线）
+    if (timelineChart && data.taskList) {
+        const completedTasks = data.taskList.filter((t: any) => t.status === 'COMPLETED' && t.endTime > 0 && t.submitTime > 0)
+        if (completedTasks.length > 0) {
+            const baseTime = Math.min(...completedTasks.map((t: any) => t.submitTime))
+            const timelineData = completedTasks.map((t: any) => ({
+                name: t.name || t.id,
+                value: [t.nodeId || 'UNASSIGNED', t.endTime - t.submitTime, t.endTime - baseTime],
+                itemStyle: { color: '#3fb950' }
+            }))
+            timelineChart.setOption({
+                backgroundColor: 'transparent',
+                tooltip: {
+                    trigger: 'item',
+                    formatter: (params: any) => `${params.data.name}<br/>节点: ${params.data.value[0]}<br/>延迟: ${params.data.value[1]} ms`
+                },
+                grid: { top: 10, bottom: 30, left: 80, right: 15 },
+                xAxis: { type: 'value', name: '相对时间 (ms)', nameTextStyle: { fontSize: 10, color: '#8b949e' }, splitLine: { lineStyle: { color: '#21262d' } }, axisLabel: { fontSize: 9, color: '#8b949e' } },
+                yAxis: { type: 'category', data: [...new Set(completedTasks.map((t: any) => t.nodeId || 'UNASSIGNED'))], axisLabel: { fontSize: 9, color: '#8b949e' } },
+                series: [{ type: 'scatter', symbolSize: 12, data: timelineData }]
+            })
+        }
+    }
+}
+
+// 自动刷新
+watch(autoRefresh, (val) => {
+    if (val && selectedBatchId.value) {
+        autoRefreshTimer = setInterval(() => {
+            if (batchDetailData.value?.status === 'PROCESSING') {
+                loadBatchDetail()
+            } else {
+                autoRefresh.value = false
+                if (autoRefreshTimer) { clearInterval(autoRefreshTimer); autoRefreshTimer = null }
+            }
+        }, 3000)
+    } else {
+        if (autoRefreshTimer) { clearInterval(autoRefreshTimer); autoRefreshTimer = null }
+    }
+})
+
+// 同步历史数据并填充批次下拉选项
+const loadMetricsHistory = async () => {
+    try {
+        await api.syncAllBatchMetrics()
+        const resp = await api.getMetricsHistory()
+        if (resp.data && Array.isArray(resp.data) && resp.data.length > 0) {
+            // 收集所有批次（按 batchId 分组，保持去重）
+            const batchMap = new Map<string, BatchOption>()
+            resp.data.forEach((item: any) => {
+                const batchId = item.batchId
+                if (batchId && !batchMap.has(batchId)) {
+                    batchMap.set(batchId, {
+                        id: batchId,
+                        label: `${batchId} (${item.taskCount || '?'}任务)`
+                    })
+                }
+            })
+            // 按 batchId 时间戳倒序（最新的在前）
+            availableBatches.value = Array.from(batchMap.values()).reverse()
+            // 自动选中最新的批次
+            if (availableBatches.value.length > 0 && !selectedBatchId.value) {
+                const first = availableBatches.value[0]
+                if (first) {
+                    selectedBatchId.value = first.id
+                    await loadBatchDetail()
+                }
+            }
+        }
+    } catch (e) {
+        console.error('Failed to load metrics history', e)
+    }
+}
+
 const downloadCsv = async () => {
   exportLoading.value = true
   try {
-    const response = await api.exportMetricsCsv()
+    const response = await api.exportMetricsCsv(selectedBatchId.value || undefined)
     const blob = new Blob([response.data], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
@@ -175,243 +438,28 @@ const downloadCsv = async () => {
   }
 }
 
-const initChart = () => {
-  if (!chartRef.value) return
-  chart = echarts.init(chartRef.value, 'dark')
-
-  const option = {
-    backgroundColor: 'transparent',
-    tooltip: {
-      trigger: 'axis',
-      backgroundColor: 'rgba(13, 17, 23, 0.95)',
-      borderColor: '#30363d',
-      textStyle: { color: '#c9d1d9', fontSize: 11 },
-      axisPointer: { type: 'line' },
-      formatter: (params: any) => {
-        if (!params || params.length === 0) return ''
-        const idx = params[0].dataIndex
-        const point = appStore.performanceStats.history[idx]
-        const meta = point?.meta
-        let header = `<div style="font-weight:bold;margin-bottom:4px;color:#00ffcc">${point?.batch || ''}</div>`
-        if (meta) {
-          header += `<div style="color:#8b949e;font-size:10px;margin-bottom:6px;line-height:1.5">`
-          header += `任务数: ${meta.taskCount} &nbsp;|&nbsp; 类型: ${meta.type}<br/>`
-          header += `CPU: ${meta.cpu} 核 &nbsp;|&nbsp; 内存: ${meta.memory} MB &nbsp;|&nbsp; 数据: ${meta.dataSize} MB`
-          header += `</div>`
-        }
-        let body = ''
-        for (const p of params) {
-          if (p.value != null) {
-            body += `<div>${p.marker} ${p.seriesName}: <b>${p.value.toLocaleString()}</b></div>`
-          }
-        }
-        return header + body
-      }
-    },
-    legend: {
-      data: ['Greedy', 'WFQ', 'Geo'],
-      textStyle: { color: '#8b949e', fontSize: 11 },
-      top: 0,
-      right: 0,
-    },
-    grid: { left: 50, right: 15, bottom: 40, top: 30 },
-    dataZoom: [{ type: 'inside' }, { type: 'slider', bottom: 0, height: 16, borderColor: 'transparent', textStyle: {color: 'transparent'} }],
-    xAxis: {
-      type: 'category',
-      data: [],
-      axisLine: { lineStyle: { color: '#30363d' } },
-      axisLabel: { color: '#8b949e', fontSize: 9, rotate: 25, interval: 0 }
-    },
-    yAxis: {
-      type: 'value',
-      name: '延迟 (ms)',
-      nameTextStyle: { color: '#8b949e', fontSize: 10 },
-      splitLine: { lineStyle: { color: '#21262d' } },
-      axisLabel: { color: '#8b949e', fontSize: 10 }
-    },
-    series: [
-      { name: 'Greedy', type: 'line', data: [], smooth: true, itemStyle: { color: '#f85149' }, lineStyle: { width: 2 } },
-      { name: 'WFQ',    type: 'line', data: [], smooth: true, itemStyle: { color: '#d29922' }, lineStyle: { width: 2 } },
-      { name: 'Geo',    type: 'line', data: [], smooth: true, itemStyle: { color: '#3fb950' }, lineStyle: { width: 2 } }
-    ]
-  }
-  chart.setOption(option)
+const handleResize = () => {
+  nodeDistChart?.resize()
+  typeDistChart?.resize()
+  percentileChart?.resize()
+  latencyScatterChart?.resize()
+  energyScatterChart?.resize()
+  timelineChart?.resize()
 }
-
-const renderChart = () => {
-    if (!chart) return
-    const metricsConfig: Record<string, { key: string, name: string }> = {
-        'latency': { key: 'latency', name: '延迟 (ms)' },
-        'energy': { key: 'energy', name: '总能耗 (J)' },
-        'bandwidth': { key: 'bandwidth', name: '带宽消耗' },
-        'success': { key: 'success', name: '成功率 (%)' }
-    }
-    const conf = metricsConfig[currentMetric.value]
-
-    const hist = appStore.performanceStats.history
-    const xData = hist.map((h: any) => h.batch)
-
-    chart.setOption({
-        yAxis: { name: conf?.name },
-        xAxis: { data: xData },
-        series: [
-            { name: 'Greedy', data: hist.map((h: any) => h[conf?.key || '']?.greedy) },
-            { name: 'WFQ',    data: hist.map((h: any) => h[conf?.key || '']?.wfq) },
-            { name: 'Geo',    data: hist.map((h: any) => h[conf?.key || '']?.geo) }
-        ]
-    })
-
-    // 初始化雷达图与矩阵图 (如果尚未初始化)
-    if (!radarChart && radarChartRef.value) {
-        radarChart = echarts.init(radarChartRef.value, 'dark')
-        radarChart.setOption({
-            backgroundColor: 'transparent',
-            tooltip: { trigger: 'item' },
-            radar: {
-                indicator: [
-                   { name: 'Latency (Avg)', max: 10000 },
-                   { name: 'Energy (Avg)', max: 50 },
-                   { name: 'Bandwidth', max: 200 },
-                   { name: 'Success Rate', max: 100 }
-                ],
-                splitArea: { show: false },
-                axisName: { color: '#8b949e', fontSize: 10 },
-                splitLine: { lineStyle: { color: '#30363d' } },
-                axisLine: { lineStyle: { color: '#30363d' } }
-            },
-            series: [{
-                type: 'radar',
-                data: [
-                    { value: [0, 0, 0, 0], name: 'Greedy', itemStyle: { color: '#f85149' } },
-                    { value: [0, 0, 0, 0], name: 'WFQ', itemStyle: { color: '#d29922' } },
-                    { value: [0, 0, 0, 0], name: 'Geo', itemStyle: { color: '#3fb950' } }
-                ]
-            }]
-        })
-    }
-
-    if (!matrixChart && matrixChartRef.value) {
-        matrixChart = echarts.init(matrixChartRef.value, 'dark')
-        matrixChart.setOption({
-            backgroundColor: 'transparent',
-            tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-            legend: { textStyle: { fontSize: 9 } },
-            grid: { top: 30, bottom: 20, left: 40, right: 10 },
-            xAxis: { type: 'value', splitLine: { show: false }, axisLabel: { fontSize: 9 } },
-            yAxis: { type: 'category', data: ['Greedy', 'WFQ', 'Geo'], axisLabel: { fontSize: 10 } },
-            series: [
-                { name: 'Total Energy (J)', type: 'bar', stack: 'total', data: [] },
-                { name: 'Total Latency (s)', type: 'bar', stack: 'total', data: [] }
-            ],
-            color: ['#f85149', '#3b82f6']
-        })
-    }
-
-    // 更新雷达与矩阵图的数据源 (若图表已就绪且历史数据不为空)
-    if (radarChart && hist.length > 0) {
-        const latest = hist[hist.length - 1]
-        // 为雷达图归一化计算逻辑 (延迟以 ms 计算, 能耗以 J 计算, 成功率 %, 带宽 MB/s)
-        const getV = (alg: string) => [
-            Math.min(10000, latest.latency?.[alg] || 0),
-            Math.min(50, latest.energy?.[alg] || 0),
-            Math.min(200, latest.bandwidth?.[alg] || 0),
-            latest.success?.[alg] || 0
-        ]
-        radarChart.setOption({
-            series: [{
-                data: [
-                    { value: getV('greedy'), name: 'Greedy' },
-                    { value: getV('wfq'), name: 'WFQ' },
-                    { value: getV('geo'), name: 'Geo' }
-                ]
-            }]
-        })
-    }
-
-    if (matrixChart && hist.length > 0) {
-        const aggs = { greedy: { e: 0, l: 0 }, wfq: { e: 0, l: 0 }, geo: { e: 0, l: 0 } }
-        hist.forEach((h: any) => {
-           aggs.greedy.e += (h.energy?.greedy || 0); aggs.greedy.l += (h.latency?.greedy || 0) / 1000;
-           aggs.wfq.e += (h.energy?.wfq || 0); aggs.wfq.l += (h.latency?.wfq || 0) / 1000;
-           aggs.geo.e += (h.energy?.geo || 0); aggs.geo.l += (h.latency?.geo || 0) / 1000;
-        })
-        matrixChart.setOption({
-            series: [
-                { data: [aggs.greedy.e, aggs.wfq.e, aggs.geo.e] },
-                { data: [aggs.greedy.l, aggs.wfq.l, aggs.geo.l] }
-            ]
-        })
-    }
-}
-
-watch(() => appStore.performanceStats.history, () => {
-    renderChart()
-}, { deep: true })
 
 onMounted(() => {
-    // 加载历史指标数据
     loadMetricsHistory()
-    setTimeout(() => {
-        initChart()
-        renderChart()
-    }, 100) // 延迟确保 DOM 容器已完全渲染展开
-
     window.addEventListener('resize', handleResize)
 })
 
-const loadMetricsHistory = async () => {
-    try {
-        const resp = await api.getMetricsHistory()
-        console.log('>>> metrics history response:', resp.data)
-
-        if (resp.data && Array.isArray(resp.data) && resp.data.length > 0) {
-            // 按 batchId 分组（ABC测试保存为 BATCH-timestamp-alg，单算法保存为 BATCH-timestamp）
-            const grouped: Record<string, any> = {}
-            resp.data.forEach((item: any) => {
-                const alg = item.algorithm || 'unknown'
-                // ABC测试: batchId = BATCH-timestamp-alg, 单算法: batchId = BATCH-timestamp
-                // 尝试提取基础batchId
-                const baseBatchId = item.batchId?.replace(/-greedy$|-wfq$|-geo$/, '') || item.batchId
-                if (!grouped[baseBatchId]) {
-                    grouped[baseBatchId] = {
-                        batch: baseBatchId,
-                        meta: { taskCount: item.taskCount || 0, type: item.type || 'batch', cpu: 0, memory: 0, dataSize: 0 },
-                        latency: { greedy: null, wfq: null, geo: null },
-                        energy: { greedy: null, wfq: null, geo: null },
-                        bandwidth: { greedy: null, wfq: null, geo: null },
-                        success: { greedy: null, wfq: null, geo: null }
-                    }
-                }
-                // 映射到对应算法
-                const keyMap: Record<string, string> = { greedy: 'greedy', wfq: 'wfq', geo: 'geo', unknown: alg }
-                const targetKey = keyMap[alg] || alg
-                if (grouped[baseBatchId].latency[targetKey] !== undefined) {
-                    grouped[baseBatchId].latency[targetKey] = item.latency
-                    grouped[baseBatchId].energy[targetKey] = item.energy
-                    grouped[baseBatchId].bandwidth[targetKey] = item.bandwidth
-                    grouped[baseBatchId].success[targetKey] = item.successRate
-                }
-            })
-            appStore.performanceStats.history = Object.values(grouped)
-        } else {
-            appStore.performanceStats.history = []
-        }
-    } catch (e) {
-        console.error('Failed to load metrics history', e)
-        appStore.performanceStats.history = []
-    }
-}
-
-const handleResize = () => {
-  chart?.resize()
-  radarChart?.resize()
-  matrixChart?.resize()
-}
-
 onUnmounted(() => {
-    chart?.dispose()
-    radarChart?.dispose()
-    matrixChart?.dispose()
+    nodeDistChart?.dispose()
+    typeDistChart?.dispose()
+    percentileChart?.dispose()
+    latencyScatterChart?.dispose()
+    energyScatterChart?.dispose()
+    timelineChart?.dispose()
+    if (autoRefreshTimer) clearInterval(autoRefreshTimer)
     window.removeEventListener('resize', handleResize)
 })
 </script>

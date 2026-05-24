@@ -33,7 +33,9 @@ export const useTaskStore = defineStore('task', {
             greedy: [] as number[],
             wfq: [] as number[],
             history: [] as any[]
-        }
+        },
+        // 当前批次详情分析数据（支持单批次即时分析）
+        batchDetailAnalytics: null as any
     }),
     actions: {
         addActiveTask(task: TaskInfo) {
@@ -61,6 +63,9 @@ export const useTaskStore = defineStore('task', {
         },
         removeStealEvent(id: string) {
             this.stealEvents = this.stealEvents.filter(e => e.id !== id)
+        },
+        setBatchDetailAnalytics(data: any) {
+            this.batchDetailAnalytics = data
         }
     }
 })

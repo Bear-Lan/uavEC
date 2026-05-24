@@ -39,6 +39,8 @@ public class BatchMetricsSummary {
 
     private long createdAt;
 
+    private Integer taskCount;
+
     /**
      * 默认构造函数
      *

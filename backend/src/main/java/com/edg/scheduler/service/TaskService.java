@@ -379,7 +379,6 @@ public class TaskService {
                                         notification.put("toNodeId", idleNode.getId());
                                         notification.put("taskId", task.getId());
                                         messagingTemplate.convertAndSend("/topic/notifications", notification);
-
                                         return; // 为了防止雪崩级系统抖动，每个心跳节拍区间内仅准许发生一笔全局工作窃取流转
                                     }
                                 }
@@ -409,8 +408,8 @@ public class TaskService {
      */
     @Transactional
     public void requeueAllActiveTasks() {
-        // 不再清空队列，而是扫描数据库中状态异常的任务重新入队
-        // 这样可以恢复那些在队列中但因为各种原因丢失的任务
+        // 清空 Redis 任务队列，防止上一轮遗留的 QUEUED 任务污染下一轮算法对比
+        redissonClient.getDeque(TASK_QUEUE_KEY).clear();
 
         RMap<String, TaskInfo> activeMap = redissonClient.getMap("task:active");
         List<TaskInfo> allTasks = taskRepository.findAll();
@@ -458,5 +457,29 @@ public class TaskService {
         if (cleaned > 0) {
             log.info("Cleaned {} stale entries from task:active", cleaned);
         }
+    }
+
+    /**
+     * 重置所有任务到初始状态（用于快照回滚后）
+     * 不将任务重新入队，仅重置状态和节点分配，防止遗留数据污染下一轮算法对比
+     */
+    @Transactional
+    public void resetAllTasksForSnapshot() {
+        List<TaskInfo> allTasks = taskRepository.findAll();
+        int reset = 0;
+        for (TaskInfo task : allTasks) {
+            if (task.getStatus() != null &&
+                (task.getStatus().startsWith("RUNNING") ||
+                 task.getStatus().equals("QUEUED") ||
+                 task.getStatus().equals("DISPATCHING") ||
+                 task.getStatus().startsWith("COMPLETED") ||
+                 task.getStatus().equals("FAILED"))) {
+                task.setStatus("PENDING");
+                task.setAssignedUavId(null);
+                taskRepository.save(task);
+                reset++;
+            }
+        }
+        log.info("快照回滚：重置 {} 个任务状态为 PENDING", reset);
     }
 }
