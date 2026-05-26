@@ -208,9 +208,11 @@ public class UAVSimulationService {
             double distance = calculateDistance(node.getX(), node.getY(), task.getOriginX(), task.getOriginY());
             long transmissionDelay = (long) (distance * distanceDelayMsPerUnit);
 
-            // 计算执行时间
+            // 计算执行时间（与云端一致的计算模型）
+            // 公式: dataSizeMB / maxCpu * 100ms（每MB数据每核需要0.1秒，与云端CloudSimulationService一致）
             long executionTimeMs = (long) ((task.getDataSize() / node.getMaxCpu()) * 100);
-            executionTimeMs = Math.max(2000, Math.min(10000, executionTimeMs * 10)) + transmissionDelay;
+            // 加入传输延迟（无人机到任务原点的无线传输）
+            executionTimeMs = Math.max(500, executionTimeMs) + transmissionDelay;
 
             // 模拟任务执行（sleep）
             try {
