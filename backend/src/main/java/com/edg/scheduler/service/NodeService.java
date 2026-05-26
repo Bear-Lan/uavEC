@@ -364,8 +364,15 @@ public class NodeService {
             }
             UAVNode node = nodes.get(nodeId);
             if (node != null && node.isOnline() && node.getBattery() > 5.0) {
-                node.setCurrentCpuUsage(node.getCurrentCpuUsage() + requiredCpu);
-                node.setCurrentMemoryUsage(node.getCurrentMemoryUsage() + requiredMemory);
+                double newCpuUsage = node.getCurrentCpuUsage() + requiredCpu;
+                double newMemUsage = node.getCurrentMemoryUsage() + requiredMemory;
+                if (newCpuUsage > node.getMaxCpu() || newMemUsage > node.getMaxMemory()) {
+                    log.warn("节点 {} 资源不足: CPU={}/{}, Memory={}/{}",
+                        nodeId, newCpuUsage, node.getMaxCpu(), newMemUsage, node.getMaxMemory());
+                    return false;
+                }
+                node.setCurrentCpuUsage(newCpuUsage);
+                node.setCurrentMemoryUsage(newMemUsage);
                 node.getActiveTasksCount().incrementAndGet();
                 return true;
             }

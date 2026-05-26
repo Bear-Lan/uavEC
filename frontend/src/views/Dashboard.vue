@@ -33,6 +33,10 @@
                   <el-option label="Geo (物理拓扑最短)" value="geo" />
                   <el-option label="Custom (自定义加权)" value="custom" />
                 </el-select>
+                <div v-if="!abcMode" style="display: flex; gap: 12px; margin-top: 4px">
+                  <el-switch v-model="randomTaskType" active-text="任务随机" inactive-text="" size="small" style="width: fit-content" />
+                  <el-switch v-model="randomDataSize" active-text="载荷随机(50-200MB)" inactive-text="" size="small" style="width: fit-content" />
+                </div>
               </div>
             </el-form-item>
 
@@ -300,6 +304,10 @@ const isTrafficActive = ref(false)
 
 const algorithm = ref('geo')
 const abcMode = ref(true)
+
+const randomTaskType = ref(false)
+const randomDataSize = ref(false)
+const taskTypes = ['IMAGE_PROCESSING', 'VIDEO_ANALYSIS', 'SENSOR_DATA']
 
 const radarSvg = ref<SVGElement | null>(null)
 const viewBoxData = ref({ x: -20, y: -20, w: 140, h: 140 })
@@ -611,6 +619,12 @@ const submitTasks = async () => {
     const operatorName = appStore.user?.username || 'Ops'
     for (let i = 0; i < batchCount.value; i++) {
       const t = { ...taskForm.value }
+      if (randomTaskType.value) {
+        t.type = taskTypes[Math.floor(Math.random() * taskTypes.length)] as TaskInfo['type']
+      }
+      if (randomDataSize.value) {
+        t.dataSize = Math.floor(Math.random() * 151) + 50
+      }
       t.originX = userX
       t.originY = userY
       t.batchId = batchId
