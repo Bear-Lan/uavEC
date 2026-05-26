@@ -24,7 +24,7 @@ import org.springframework.stereotype.Component;
 @Component("latencyOptimalStrategy")
 public class LatencyOptimalStrategy implements OffloadingStrategy {
 
-    private static final double UPLINK_BANDWIDTH_MBPS = 50.0;   // 上行带宽 MB/s
+    private static final double UPLINK_BANDWIDTH_MBPS = 50.0;   // 上行带宽 MB/s（基准值，用于Shannon归一化）
     private static final double DOWNLINK_BANDWIDTH_MBPS = 50.0; // 下行带宽 MB/s
     private static final double RESULT_SIZE_MB = 1.0;           // 结果数据大小 MB
 
@@ -33,10 +33,10 @@ public class LatencyOptimalStrategy implements OffloadingStrategy {
         // 1. 计算边缘执行时间
         double edgeExecTimeSec = calculateEdgeExecutionTime(task, node);
 
-        // 2. 计算云端执行时间（M/M/1 排队论）
+        // 2. 计算云端执行时间（M/M/1 排队论 + Shannon 动态带宽）
         double cloudTotalTimeSec;
         try {
-            cloudTotalTimeSec = calculateCloudTotalTime(task, cloud);
+            cloudTotalTimeSec = calculateCloudTotalTime(task, node, cloud);
         } catch (IllegalStateException e) {
             // 云端拥塞，返回边缘执行
             log.warn("任务 {} 云端拥塞，强制边缘执行: {}", task.getTaskName(), e.getMessage());
@@ -91,13 +91,15 @@ public class LatencyOptimalStrategy implements OffloadingStrategy {
     /**
      * 计算云端总时间
      * = 上传时间 + M/M/1排队等待 + 云端计算时间 + 结果下载时间
+     * 其中上传时间使用 Shannon 容量模型计算动态有效带宽
      */
-    private double calculateCloudTotalTime(TaskInfo task, CloudStatus cloud) {
+    private double calculateCloudTotalTime(TaskInfo task, UAVNode node, CloudStatus cloud) {
         double dataSizeMB = task.getDataSize();
         double resultSizeMB = RESULT_SIZE_MB;
 
-        // 1. 上传时间
-        double uplinkTimeSec = dataSizeMB / UPLINK_BANDWIDTH_MBPS;
+        // 1. 上传时间（基于 Shannon 动态带宽）
+        double effectiveBandwidth = calculateShannonBandwidth(node, task, cloud);
+        double uplinkTimeSec = dataSizeMB / effectiveBandwidth;
 
         // 2. M/M/1 排队等待时间
         double queueWaitSec;
@@ -110,13 +112,37 @@ public class LatencyOptimalStrategy implements OffloadingStrategy {
         // 3. 云端计算时间
         double cloudComputeSec = (dataSizeMB / cloud.getAvailableCpu()) * 0.1;
 
-        // 4. 结果下载时间
+        // 4. 结果下载时间（固定带宽）
         double downlinkTimeSec = resultSizeMB / DOWNLINK_BANDWIDTH_MBPS;
 
         // 5. 广域网延迟（往返）
         double wanLatencySec = 0.05; // 50ms RTT
 
         return uplinkTimeSec + queueWaitSec + cloudComputeSec + downlinkTimeSec + wanLatencySec;
+    }
+
+    /**
+     * 基于 Shannon 容量模型计算边缘到云端的有效传输带宽
+     * C = B × log2(1 + SNR)
+     * 其中 SNR = 100 / pathLossMultiplier，pathLossMultiplier = (distance / 10)^2
+     * 距离 = 无人机节点到任务原点的距离（无线链路质量决定有效带宽）
+     *
+     * @param node 无人机节点（发射端）
+     * @param task 任务信息（包含原点坐标）
+     * @param cloud 云端状态（用于获取基准带宽）
+     * @return 有效传输带宽（MB/s）
+     */
+    private double calculateShannonBandwidth(UAVNode node, TaskInfo task, CloudStatus cloud) {
+        // 基准带宽：使用云端配置的带宽
+        double baseBandwidthMBps = cloud.getBandwidthMbps() / 8.0;  // Mbps → MB/s
+        if (baseBandwidthMBps <= 0) baseBandwidthMBps = UPLINK_BANDWIDTH_MBPS;
+        // 距离：无人机节点到任务原点的距离（决定路径损耗）
+        double distance = calculateDistance(node.getX(), node.getY(), task.getOriginX(), task.getOriginY());
+        double pathLossMultiplier = Math.pow(Math.max(1.0, distance / 10.0), 2);
+        double snr = 100.0 / pathLossMultiplier;
+        // Shannon: C = B × log2(1+SNR)，归一化到基准SNR=100时等于baseBandwidth
+        double effectiveBandwidth = baseBandwidthMBps * Math.log(1 + snr) / Math.log(1 + 100.0);
+        return Math.max(0.5, effectiveBandwidth);
     }
 
     /**

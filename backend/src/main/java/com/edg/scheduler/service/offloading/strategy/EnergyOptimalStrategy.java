@@ -36,8 +36,8 @@ public class EnergyOptimalStrategy implements OffloadingStrategy {
         // 1. 计算本地执行能耗（DVFS 模型）
         double localEnergyJ = calculateLocalEnergy(task, node);
 
-        // 2. 计算传输能耗
-        double transEnergyJ = calculateTransEnergy(task);
+        // 2. 计算传输能耗（基于 Shannon 动态带宽 + 路径损耗）
+        double transEnergyJ = calculateTransEnergy(task, node, cloud);
 
         // 3. 考虑云端计算能耗（如果传输到云端）
         double cloudComputeEnergyJ = calculateCloudComputeEnergy(task, cloud);
@@ -66,7 +66,7 @@ public class EnergyOptimalStrategy implements OffloadingStrategy {
             return OffloadResult.cloud(
                     String.format("云端能耗%.1fJ < 边缘能耗%.1fJ（电池%d%%）",
                             cloudTotalEnergy, localEnergyJ, (int) node.getBattery()),
-                    estimateCloudLatency(task, cloud),
+                    estimateCloudLatency(task, node, cloud),
                     cloudTotalEnergy);
         }
     }
@@ -96,13 +96,20 @@ public class EnergyOptimalStrategy implements OffloadingStrategy {
     /**
      * 计算传输能耗
      * E_trans = Pt * (dataSize / bandwidth)
+     * 其中带宽基于 Shannon 模型动态计算，发射功率随路径损耗变化
      *
      * @param task 任务信息
+     * @param node 无人机节点
+     * @param cloud 云端状态
      * @return 传输能耗（焦耳）
      */
-    private double calculateTransEnergy(TaskInfo task) {
-        double txTimeSec = task.getDataSize() / UPLINK_BANDWIDTH_MBPS;
-        return TX_POWER_WATTS * txTimeSec;
+    private double calculateTransEnergy(TaskInfo task, UAVNode node, CloudStatus cloud) {
+        double effectiveBandwidth = calculateShannonBandwidth(node, task, cloud);
+        double txTimeSec = task.getDataSize() / effectiveBandwidth;
+        double pathLossMultiplier = calculatePathLoss(node, task);
+        // 发射功率随路径损耗变化：距离越远需要越高发射功率
+        double txPower = TX_POWER_WATTS * pathLossMultiplier;
+        return txPower * txTimeSec;
     }
 
     /**
@@ -150,10 +157,11 @@ public class EnergyOptimalStrategy implements OffloadingStrategy {
     }
 
     /**
-     * 估算云端执行延迟
+     * 估算云端执行延迟（基于 Shannon 动态带宽）
      */
-    private double estimateCloudLatency(TaskInfo task, CloudStatus cloud) {
-        double uplinkSec = task.getDataSize() / UPLINK_BANDWIDTH_MBPS;
+    private double estimateCloudLatency(TaskInfo task, UAVNode node, CloudStatus cloud) {
+        double effectiveBandwidth = calculateShannonBandwidth(node, task, cloud);
+        double uplinkSec = task.getDataSize() / effectiveBandwidth;
         double computeSec = (task.getDataSize() / cloud.getAvailableCpu()) * 0.1;
         try {
             double queueWaitSec = cloud.calculateQueueWaitTime();
@@ -161,6 +169,27 @@ public class EnergyOptimalStrategy implements OffloadingStrategy {
         } catch (IllegalStateException e) {
             return (uplinkSec + computeSec + 0.05) * 1000;
         }
+    }
+
+    /**
+     * 基于 Shannon 容量模型计算有效传输带宽
+     * C = B × log2(1 + SNR)，SNR = 100 / pathLossMultiplier
+     */
+    private double calculateShannonBandwidth(UAVNode node, TaskInfo task, CloudStatus cloud) {
+        double baseBandwidthMBps = cloud.getBandwidthMbps() / 8.0;
+        if (baseBandwidthMBps <= 0) baseBandwidthMBps = UPLINK_BANDWIDTH_MBPS;
+        double pathLoss = calculatePathLoss(node, task);
+        double snr = 100.0 / pathLoss;
+        double effectiveBandwidth = baseBandwidthMBps * Math.log(1 + snr) / Math.log(1 + 100.0);
+        return Math.max(0.5, effectiveBandwidth);
+    }
+
+    /**
+     * 计算路径损耗因子
+     */
+    private double calculatePathLoss(UAVNode node, TaskInfo task) {
+        double distance = calculateDistance(node.getX(), node.getY(), task.getOriginX(), task.getOriginY());
+        return Math.pow(Math.max(1.0, distance / 10.0), 2);
     }
 
     /**

@@ -40,8 +40,9 @@ public class AdaptivePartialStrategy implements OffloadingStrategy {
         double edgeTxDelaySec = distance * 0.005;
         double totalEdgeTimeSec = edgeComputeTimeSec + edgeTxDelaySec;
 
-        // 2. 计算云端执行时间
-        double cloudUplinkSec = dataSizeMB / UPLINK_BANDWIDTH_MBPS;
+        // 2. 计算云端执行时间（基于 Shannon 动态带宽）
+        double effectiveBandwidth = calculateShannonBandwidth(node, task, cloud);
+        double cloudUplinkSec = dataSizeMB / effectiveBandwidth;
         double cloudComputeSec = (dataSizeMB / CLOUD_CPU_CORES) * 0.1;
         double queueWaitSec = 0;
         try {
@@ -143,15 +144,38 @@ public class AdaptivePartialStrategy implements OffloadingStrategy {
         double edgeComputeTimeSec = (edgeDataMB / node.getMaxCpu()) * 0.1;
         double edgeEnergy = 5.0 * node.getDrainRateMultiplier() * edgeComputeTimeSec;
 
-        // 传输能耗
-        double txTimeSec = cloudDataMB / UPLINK_BANDWIDTH_MBPS;
-        double txEnergy = 2.0 * txTimeSec;
+        // 传输能耗（基于 Shannon 动态带宽）
+        double effectiveBandwidth = calculateShannonBandwidth(node, task, cloud);
+        double txTimeSec = cloudDataMB / effectiveBandwidth;
+        double pathLoss = calculatePathLoss(node, task);
+        double txEnergy = 2.0 * pathLoss * txTimeSec;
 
         // 云端计算能耗
         double cloudComputeTimeSec = (cloudDataMB / cloud.getAvailableCpu()) * 0.1;
         double cloudEnergy = 0.5 * cloudComputeTimeSec;
 
         return edgeEnergy + txEnergy + cloudEnergy;
+    }
+
+    /**
+     * 基于 Shannon 容量模型计算有效传输带宽
+     * C = B × log2(1 + SNR)
+     */
+    private double calculateShannonBandwidth(UAVNode node, TaskInfo task, CloudStatus cloud) {
+        double baseBandwidthMBps = cloud.getBandwidthMbps() / 8.0;
+        if (baseBandwidthMBps <= 0) baseBandwidthMBps = UPLINK_BANDWIDTH_MBPS;
+        double pathLoss = calculatePathLoss(node, task);
+        double snr = 100.0 / pathLoss;
+        double effectiveBandwidth = baseBandwidthMBps * Math.log(1 + snr) / Math.log(1 + 100.0);
+        return Math.max(0.5, effectiveBandwidth);
+    }
+
+    /**
+     * 计算路径损耗因子
+     */
+    private double calculatePathLoss(UAVNode node, TaskInfo task) {
+        double distance = calculateDistance(node.getX(), node.getY(), task.getOriginX(), task.getOriginY());
+        return Math.pow(Math.max(1.0, distance / 10.0), 2);
     }
 
     /**

@@ -350,8 +350,8 @@ public class DQNOffloadingStrategy implements OffloadingStrategy {
             case ACTION_CLOUD:
                 return OffloadResult.cloud(
                         "DQN决策-云端执行",
-                        estimateCloudLatency(task, cloud),
-                        estimateCloudEnergy(task));
+                        estimateCloudLatency(task, node, cloud),
+                        estimateCloudEnergy(task, node, cloud));
 
             case ACTION_PARTIAL:
                 // 自适应分割比例
@@ -374,9 +374,10 @@ public class DQNOffloadingStrategy implements OffloadingStrategy {
      */
     private double calculateAdaptiveRho(TaskInfo task, UAVNode node, CloudStatus cloud) {
         double edgeTime = estimateEdgeLatency(task, node) / 1000;
-        double cloudTime = estimateCloudLatency(task, cloud) / 1000;
+        double cloudTime = estimateCloudLatency(task, node, cloud) / 1000;
+        double effectiveBW = calculateShannonBandwidth(node, task, cloud);
         double V_edge = edgeTime / task.getDataSize();
-        double V_trans = (task.getDataSize() / 50.0) / task.getDataSize();
+        double V_trans = 1.0 / effectiveBW; // 每MB数据的传输时间
         // 利用 cloudTime 的比较结果（隐式使用，防止编译器警告）
         double timeRatio = (cloudTime > edgeTime) ? cloudTime / edgeTime : 1.0;
         double rho = V_edge / (V_edge + V_trans) / timeRatio;
@@ -394,10 +395,11 @@ public class DQNOffloadingStrategy implements OffloadingStrategy {
     }
 
     /**
-     * 估算云端延迟
+     * 估算云端延迟（基于 Shannon 动态带宽）
      */
-    private double estimateCloudLatency(TaskInfo task, CloudStatus cloud) {
-        double uplinkSec = task.getDataSize() / 50.0;
+    private double estimateCloudLatency(TaskInfo task, UAVNode node, CloudStatus cloud) {
+        double effectiveBandwidth = calculateShannonBandwidth(node, task, cloud);
+        double uplinkSec = task.getDataSize() / effectiveBandwidth;
         double computeSec = (task.getDataSize() / cloud.getAvailableCpu()) * 0.1;
         double queueWaitSec = 0;
         try {
@@ -413,7 +415,7 @@ public class DQNOffloadingStrategy implements OffloadingStrategy {
      */
     private double estimatePartialLatency(TaskInfo task, UAVNode node, CloudStatus cloud, double rho) {
         double edgeTime = estimateEdgeLatency(task, node) * rho;
-        double cloudTime = estimateCloudLatency(task, cloud) * (1 - rho);
+        double cloudTime = estimateCloudLatency(task, node, cloud) * (1 - rho);
         return Math.max(edgeTime, cloudTime);
     }
 
@@ -427,11 +429,13 @@ public class DQNOffloadingStrategy implements OffloadingStrategy {
     }
 
     /**
-     * 估算云端能耗
+     * 估算云端能耗（基于 Shannon 动态带宽）
      */
-    private double estimateCloudEnergy(TaskInfo task) {
-        double txPower = 2.0;
-        double txTimeSec = task.getDataSize() / 50.0;
+    private double estimateCloudEnergy(TaskInfo task, UAVNode node, CloudStatus cloud) {
+        double effectiveBandwidth = calculateShannonBandwidth(node, task, cloud);
+        double txTimeSec = task.getDataSize() / effectiveBandwidth;
+        double pathLoss = calculatePathLoss(node, task);
+        double txPower = 2.0 * pathLoss;
         return txPower * txTimeSec;
     }
 
@@ -441,8 +445,29 @@ public class DQNOffloadingStrategy implements OffloadingStrategy {
     private double estimatePartialEnergy(TaskInfo task, UAVNode node, CloudStatus cloud, double rho) {
         double cloudRatio = 1.0 - rho;
         double edgeEnergy = estimateEdgeEnergy(task, node) * rho;
-        double cloudEnergy = estimateCloudEnergy(task) * cloudRatio;
+        double cloudEnergy = estimateCloudEnergy(task, node, cloud) * cloudRatio;
         return edgeEnergy + cloudEnergy;
+    }
+
+    /**
+     * 基于 Shannon 容量模型计算有效传输带宽
+     * C = B × log2(1 + SNR)
+     */
+    private double calculateShannonBandwidth(UAVNode node, TaskInfo task, CloudStatus cloud) {
+        double baseBandwidthMBps = cloud.getBandwidthMbps() / 8.0;
+        if (baseBandwidthMBps <= 0) baseBandwidthMBps = 50.0;
+        double pathLoss = calculatePathLoss(node, task);
+        double snr = 100.0 / pathLoss;
+        double effectiveBandwidth = baseBandwidthMBps * Math.log(1 + snr) / Math.log(1 + 100.0);
+        return Math.max(0.5, effectiveBandwidth);
+    }
+
+    /**
+     * 计算路径损耗因子
+     */
+    private double calculatePathLoss(UAVNode node, TaskInfo task) {
+        double distance = calculateDistance(node.getX(), node.getY(), task.getOriginX(), task.getOriginY());
+        return Math.pow(Math.max(1.0, distance / 10.0), 2);
     }
 
     /**
