@@ -72,22 +72,24 @@ public class CloudSimulationService {
             return t;
         });
 
-        workerExecutor = Executors.newFixedThreadPool(4, r -> {
+        // 云端 worker 数量与 CPU 核数成正比：每 4 核一个 worker，上限 32
+        int cloudWorkers = Math.min(32, Math.max(4, (int) (cloudCpuCores / 4)));
+        workerExecutor = Executors.newFixedThreadPool(cloudWorkers, r -> {
             Thread t = new Thread(r, "cloud-worker-");
             t.setDaemon(true);
             return t;
         });
 
+        log.info("CloudSimulationService 初始化完成, workers={}, 服务率={} 任务/秒",
+                cloudWorkers, cloudServiceRate);
+
         // 定期更新 cloud:stats
         statsScheduler.scheduleAtFixedRate(this::updateCloudStats, 0, 500, TimeUnit.MILLISECONDS);
 
         // 启动云端 worker 处理队列
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < cloudWorkers; i++) {
             workerExecutor.submit(this::cloudWorkerLoop);
         }
-
-        log.info("CloudSimulationService 初始化完成, workers={}, 服务率={} 任务/秒",
-                4, cloudServiceRate);
     }
 
     /**

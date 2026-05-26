@@ -34,6 +34,14 @@ public class AdaptivePartialStrategy implements OffloadingStrategy {
     public OffloadResult calculateOffloadingPath(UAVNode node, TaskInfo task, CloudStatus cloud) {
         double dataSizeMB = task.getDataSize();
 
+        // 0. 云端拥塞检查：到达率超过服务率的80%则直接边缘执行
+        if (cloud.isCongested()) {
+            return OffloadResult.edge(
+                    String.format("云端拥塞(λ=%.2f, μ=%.2f)，强制边缘执行", cloud.getLambda(), cloud.getMu()),
+                    0,
+                    0);
+        }
+
         // 1. 计算边缘执行时间
         double edgeComputeTimeSec = calculateEdgeComputeTime(task, node);
         double distance = calculateDistance(node.getX(), node.getY(), task.getOriginX(), task.getOriginY());
