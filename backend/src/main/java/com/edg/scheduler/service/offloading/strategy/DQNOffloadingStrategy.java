@@ -11,6 +11,9 @@ import jakarta.annotation.PostConstruct;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
+import com.edg.scheduler.service.offloading.DQNWeightPersistenceService;
+import com.edg.scheduler.service.offloading.DQNOfflineTrainer;
+
 /**
  * DQN 深度强化学习卸载策略
  *
@@ -74,13 +77,30 @@ public class DQNOffloadingStrategy implements OffloadingStrategy {
     // 历史记录（用于训练）
     private Map<String, Double> taskRewardHistory = new ConcurrentHashMap<>();
 
-    public DQNOffloadingStrategy() {
+    // 持久化和离线训练服务
+    private final DQNWeightPersistenceService weightPersistence;
+    private final DQNOfflineTrainer offlineTrainer;
+
+    public DQNOffloadingStrategy(
+            DQNWeightPersistenceService weightPersistence,
+            DQNOfflineTrainer offlineTrainer) {
+        this.weightPersistence = weightPersistence;
+        this.offlineTrainer = offlineTrainer;
         initializeNetwork();
     }
 
     @PostConstruct
     public void init() {
-        log.info("DQN卸载策略初始化完成, epsilon: {:.3f}", epsilon);
+        // 尝试从文件加载历史权重
+        DQNWeightPersistenceService.DQNWeights saved = weightPersistence.loadWeights();
+        if (saved != null) {
+            loadWeights(saved);
+            epsilon = saved.getEpsilon();
+            log.info("DQN卸载策略已加载历史权重: epsilon={}, 样本数={}, 训练次数={}",
+                    epsilon, saved.getTrainSampleCount(), saved.getTotalTrainCount());
+        } else {
+            log.info("DQN卸载策略初始化完成（随机权重）, epsilon: {:.3f}", epsilon);
+        }
     }
 
     /**
@@ -140,6 +160,27 @@ public class DQNOffloadingStrategy implements OffloadingStrategy {
         }
     }
 
+    /**
+     * 从持久化对象加载权重
+     */
+    private void loadWeights(DQNWeightPersistenceService.DQNWeights weights) {
+        this.w1 = weights.getW1();
+        this.b1 = weights.getB1();
+        this.w2 = weights.getW2();
+        this.b2 = weights.getB2();
+        copyNetworkToTarget();
+    }
+
+    /**
+     * 保存当前权重到持久化
+     */
+    private void persistWeights() {
+        DQNWeightPersistenceService.DQNWeights weights =
+                new DQNWeightPersistenceService.DQNWeights(w1, b1, w2, b2, epsilon,
+                        offlineTrainer.getOfflineBufferSize(), offlineTrainer.getTotalTrainCount());
+        weightPersistence.saveWeights(weights);
+    }
+
     @Override
     public OffloadResult calculateOffloadingPath(UAVNode node, TaskInfo task, CloudStatus cloud) {
         // 1. 构建状态向量
@@ -151,20 +192,40 @@ public class DQNOffloadingStrategy implements OffloadingStrategy {
         // 3. 根据动作计算卸载结果
         OffloadResult result = getOffloadResult(action, task, node, cloud);
 
-        // 4. 记录经验（异步训练）
+        // 4. 仅记录经验（离线训练模式，暂不使用在线梯度更新）
         recordExperience(state, action, result);
 
         // 5. 更新探索率
         epsilon = Math.max(EPSILON_END, epsilon * EPSILON_DECAY);
 
-        log.info("任务 {} [DQN] 状态: 数据量{}MB, 优先级{}, 电池{}%, CPU可用{:.1f}",
+        // 每隔一段时间持久化一次（避免频繁IO）
+        if (offlineTrainer.getOfflineBufferSize() > 0 && offlineTrainer.getOfflineBufferSize() % 100 == 0) {
+            persistWeights();
+        }
+
+        log.info("任务 {} [DQN] 决策: {}, 数据量{}MB, 优先级{}, 电池{}%, 估算延迟{}ms, epsilon={:.3f}",
                 task.getTaskName(),
+                result.getDecision(),
                 formatInt(task.getDataSize()),
                 task.getPriority(),
                 formatInt(node.getBattery()),
-                formatFloat(node.getAvailableCpu()));
+                formatInt(result.getEstimatedLatency()),
+                epsilon);
 
         return result;
+    }
+
+    /**
+     * 从文件重新加载最新权重（离线训练后调用）
+     */
+    public void reloadWeightsFromFile() {
+        DQNWeightPersistenceService.DQNWeights saved = weightPersistence.loadWeights();
+        if (saved != null) {
+            loadWeights(saved);
+            epsilon = saved.getEpsilon();
+            log.info("DQN 权重已重新加载: 样本数={}, epsilon={:.3f}",
+                    saved.getTrainSampleCount(), epsilon);
+        }
     }
 
     @Override
@@ -385,10 +446,13 @@ public class DQNOffloadingStrategy implements OffloadingStrategy {
     }
 
     /**
-     * 记录经验到回放缓冲区
+     * 记录经验到回放缓冲区（仅存储，不在线训练）
+     *
+     * 说明：在线训练使用估算reward，噪声太大。
+     * 真正的训练在 DQNOfflineTrainer 中进行，利用数据库中的真实执行记录。
      */
     private void recordExperience(double[] state, int action, OffloadResult result) {
-        // 计算奖励（延迟和能耗的负值，越小越好）
+        // 估算奖励（仅供参考，不用于训练）
         double reward = - (result.getEstimatedLatency() / 1000.0 + result.getEstimatedEnergy() / 10.0);
 
         Experience exp = new Experience(state.clone(), action, reward, result.getDecision().name());
@@ -398,67 +462,27 @@ public class DQNOffloadingStrategy implements OffloadingStrategy {
         if (replayBuffer.size() > REPLAY_BUFFER_SIZE) {
             replayBuffer.remove(0);
         }
-
-        // 定期训练（每10个样本训练一次）
-        if (replayBuffer.size() >= 10 && replayBuffer.size() % 10 == 0) {
-            train();
-        }
     }
 
     /**
-     * 简化的训练过程
+     * 简化的在线训练过程（已禁用，保留方法签名兼容）
+     * 实际训练由 DQNOfflineTrainer 从数据库读取真实数据后批量进行
      */
     private void train() {
-        if (replayBuffer.size() < 10) return;
+        // 已禁用：真实训练由离线训练器执行
+    }
 
-        // 随机采样
+    /**
+     * 随机采样
+     */
+    private List<Experience> sampleBatch(int batchSize) {
         Random rand = new Random();
         List<Experience> batch = new ArrayList<>();
-        for (int i = 0; i < 8; i++) {
+        for (int i = 0; i < batchSize; i++) {
             int idx = rand.nextInt(replayBuffer.size());
             batch.add(replayBuffer.get(idx));
         }
-
-        // 简化梯度下降（仅更新隐藏层权重）
-        for (Experience exp : batch) {
-            double[] qValues = forward(exp.state);
-            double[] targetQValues = forwardTarget(exp.state);
-
-            // 计算TD目标
-            int action = exp.action;
-            double tdTarget = exp.reward + GAMMA * maxQ(targetQValues);
-            double tdError = qValues[action] - tdTarget;
-
-            // 梯度下降（简化版）
-            double[] hidden = new double[HIDDEN_SIZE];
-            for (int j = 0; j < HIDDEN_SIZE; j++) {
-                double sum = b1[j];
-                for (int i = 0; i < INPUT_SIZE; i++) {
-                    sum += exp.state[i] * w1[i][j];
-                }
-                hidden[j] = relu(sum);
-            }
-
-            // 更新 w2 和 b2
-            for (int j = 0; j < OUTPUT_SIZE; j++) {
-                double gradient = (j == action) ? tdError : 0;
-                for (int i = 0; i < HIDDEN_SIZE; i++) {
-                    w2[i][j] -= LEARNING_RATE * gradient * hidden[i];
-                }
-                b2[j] -= LEARNING_RATE * gradient;
-            }
-
-            // 更新 w1 和 b1
-            for (int i = 0; i < INPUT_SIZE; i++) {
-                for (int j = 0; j < HIDDEN_SIZE; j++) {
-                    double grad = (hidden[j] > 0) ? tdError * w2[j][action] * exp.state[i] : 0;
-                    w1[i][j] -= LEARNING_RATE * grad;
-                    if (hidden[j] > 0) {
-                        b1[j] -= LEARNING_RATE * tdError * w2[j][action];
-                    }
-                }
-            }
-        }
+        return batch;
     }
 
     private double maxQ(double[] qValues) {

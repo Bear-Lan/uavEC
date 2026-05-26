@@ -49,6 +49,12 @@ public class AppController {
     @Autowired
     private AuthService authService;
 
+    @Autowired(required = false)
+    private com.edg.scheduler.service.offloading.DQNOfflineTrainer dqnOfflineTrainer;
+
+    @Autowired(required = false)
+    private com.edg.scheduler.service.offloading.strategy.DQNOffloadingStrategy dqnOffloadingStrategy;
+
     /**
      * 初始化默认管理员账户
      *
@@ -381,5 +387,118 @@ public class AppController {
                 .header("Content-Type", "text/csv; charset=utf-8")
                 .header("Content-Disposition", "attachment; filename=\"" + filename + "\"")
                 .body(csv);
+    }
+
+    // ==================== DQN 离线训练接口 ====================
+
+    /**
+     * 执行 DQN 离线训练
+     *
+     * 从数据库读取已完成任务的真实执行记录（延迟、能耗），
+     * 利用真实 reward 替代估算 reward 进行训练，
+     * 训练完成后自动重新加载最新权重。
+     *
+     * @param batchId 可选，指定批次ID进行针对性训练；为空则训练所有历史数据
+     * @return 训练结果摘要
+     */
+    @PostMapping("/dqn/train")
+    public ResponseEntity<Map<String, Object>> trainDQN(
+            @RequestParam(required = false) String batchId) {
+        if (dqnOfflineTrainer == null) {
+            return ResponseEntity.status(503).body(Map.of(
+                    "status", "UNAVAILABLE",
+                    "message", "DQN离线训练服务未启用"));
+        }
+        if (dqnOfflineTrainer.isTraining()) {
+            return ResponseEntity.ok(Map.of(
+                    "status", "SKIP",
+                    "message", "训练正在进行中，请稍后"));
+        }
+
+        Map<String, Object> result = dqnOfflineTrainer.trainOffline(batchId);
+
+        // 训练成功后，重新加载最新权重
+        if ("SUCCESS".equals(result.get("status")) && dqnOffloadingStrategy != null) {
+            dqnOffloadingStrategy.reloadWeightsFromFile();
+            result.put("weightsReloaded", true);
+        }
+
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * 获取 DQN 训练状态
+     *
+     * @return 训练状态信息（是否训练中、离线经验数、总训练次数）
+     */
+    @GetMapping("/dqn/status")
+    public ResponseEntity<Map<String, Object>> getDQNStatus() {
+        if (dqnOfflineTrainer == null) {
+            return ResponseEntity.status(503).body(Map.of(
+                    "status", "UNAVAILABLE",
+                    "message", "DQN离线训练服务未启用"));
+        }
+
+        return ResponseEntity.ok(Map.of(
+                "isTraining", dqnOfflineTrainer.isTraining(),
+                "offlineBufferSize", dqnOfflineTrainer.getOfflineBufferSize(),
+                "totalTrainCount", dqnOfflineTrainer.getTotalTrainCount(),
+                "message", String.format("离线经验数: %d, 训练次数: %d",
+                        dqnOfflineTrainer.getOfflineBufferSize(),
+                        dqnOfflineTrainer.getTotalTrainCount())));
+    }
+
+    /**
+     * 手动触发保存当前 DQN 权重到文件
+     *
+     * @return 保存结果
+     */
+    @PostMapping("/dqn/save")
+    public ResponseEntity<Map<String, Object>> saveDQNWeights() {
+        if (dqnOffloadingStrategy == null) {
+            return ResponseEntity.status(503).body(Map.of(
+                    "status", "UNAVAILABLE",
+                    "message", "DQN策略未启用"));
+        }
+        try {
+            java.lang.reflect.Method persistMethod =
+                    dqnOffloadingStrategy.getClass().getDeclaredMethod("persistWeights");
+            persistMethod.setAccessible(true);
+            persistMethod.invoke(dqnOffloadingStrategy);
+            return ResponseEntity.ok(Map.of(
+                    "status", "SAVED",
+                    "message", "权重已保存到 data/dqn/dqn_weights.json"));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of(
+                    "status", "ERROR",
+                    "message", "保存失败: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * 从文件重新加载 DQN 权重
+     *
+     * @return 重新加载结果
+     */
+    @PostMapping("/dqn/reload")
+    public ResponseEntity<Map<String, Object>> reloadDQNWeights() {
+        if (dqnOffloadingStrategy == null) {
+            return ResponseEntity.status(503).body(Map.of(
+                    "status", "UNAVAILABLE",
+                    "message", "DQN策略未启用"));
+        }
+        try {
+            java.lang.reflect.Method reloadMethod =
+                    dqnOffloadingStrategy.getClass().getDeclaredMethod("reloadWeightsFromFile");
+            reloadMethod.setAccessible(true);
+            reloadMethod.invoke(dqnOffloadingStrategy);
+            return ResponseEntity.ok(Map.of(
+                    "status", "RELOADED",
+                    "message", "权重已从文件重新加载"));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of(
+                    "status", "ERROR",
+                    "message", "重新加载失败: " + e.getMessage()));
+        }
     }
 }

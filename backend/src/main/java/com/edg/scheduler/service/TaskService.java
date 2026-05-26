@@ -137,6 +137,15 @@ public class TaskService {
             if (task == null)
                 break;
 
+            // 安全防护：队列中只应处理 QUEUED 状态的任务
+            // 如果任务状态不是 QUEUED（如 PENDING/FAILED 等遗留任务），直接丢弃并记录
+            if (!"QUEUED".equals(task.getStatus())) {
+                log.warn("队列中发现非 QUEUED 状态任务 {} (状态={})，已丢弃，防止遗留任务污染调度", task.getTaskName(), task.getStatus());
+                task.setStatus("PENDING");
+                taskRepository.save(task);
+                continue;
+            }
+
             log.info("从Redis队列取出任务 {}", task.getTaskName());
 
             // 瀑布流追踪检查点 2: 出队完毕 -> 即将调遣 (Dequeued -> Dispatching)
@@ -451,11 +460,36 @@ public class TaskService {
             }
         }
 
+        // 清理数据库中停留在 QUEUED 状态但不在 Redis 队列中的遗留任务
+        // 这些任务可能是之前 Redis 队列被清空后遗留的，与 activeMap 状态不一致
+        org.redisson.api.RDeque<TaskInfo> queue = redissonClient.getDeque(TASK_QUEUE_KEY);
+        int staleCleared = 0;
+        for (TaskInfo task : allTasks) {
+            if ("QUEUED".equals(task.getStatus())) {
+                boolean foundInQueue = queue.contains(task);
+                if (!foundInQueue) {
+                    // 不在 Redis 队列中，说明是僵尸任务，清理为 PENDING 状态
+                    task.setStatus("PENDING");
+                    if (task.getAssignedUavId() != null) {
+                        nodeService.release(task.getAssignedUavId(), task.getRequiredCpu(), task.getRequiredMemory());
+                        task.setAssignedUavId(null);
+                    }
+                    taskRepository.save(task);
+                    messagingTemplate.convertAndSend("/topic/tasks", task);
+                    staleCleared++;
+                    log.info("清理僵尸 QUEUED 任务: {} (不在 Redis 队列中)", task.getId());
+                }
+            }
+        }
+
         if (requeued > 0) {
             log.info("Recovered {} orphaned tasks", requeued);
         }
         if (cleaned > 0) {
             log.info("Cleaned {} stale entries from task:active", cleaned);
+        }
+        if (staleCleared > 0) {
+            log.info("清除 {} 个僵尸 QUEUED 任务", staleCleared);
         }
     }
 

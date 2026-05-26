@@ -42,13 +42,13 @@
               
               <div class="node-stats">
                   <div class="stat-item">
-                      <span class="label">CPU LOAD</span>
-                      <el-progress 
-                          :percentage="Math.min(100, Math.round((node.currentCpuUsage / node.maxCpu) * 100))" 
+                      <span class="label">平均CPU占用率</span>
+                      <el-progress
+                          :percentage="Math.round((node.currentCpuUsage / node.maxCpu) * 100)"
                           :status="getCpuStatus(node.currentCpuUsage, node.maxCpu)"
                           :stroke-width="12"
                       />
-                      <div class="detail">{{ node.currentCpuUsage }} / {{ node.maxCpu }} Cores</div>
+                      <div class="detail">{{ node.currentCpuUsage.toFixed(1) }} / {{ node.maxCpu }} Cores ({{ Math.round((node.currentCpuUsage / node.maxCpu) * 100) }}%)</div>
                   </div>
                   
                   <div class="stat-item">
