@@ -5,6 +5,7 @@ import { ElNotification } from 'element-plus'
 import { useNodeStore } from './nodeStore'
 import { useTaskStore } from './taskStore'
 import { useAuthStore } from './authStore'
+import { useCloudStore } from './cloudStore'
 import { api } from '../services/api'
 
 export interface OnlineUser {
@@ -120,6 +121,15 @@ export const useWsStore = defineStore('ws', {
                             const users: OnlineUser[] = JSON.parse(msg.body);
                             authStore.setOnlineUsers(users);
                         } catch (e) { console.error('WS Users parse error', e) }
+                    }
+                });
+
+                this.stompClient?.subscribe('/topic/cloud', (msg) => {
+                    if (msg.body) {
+                        try {
+                            const stats = JSON.parse(msg.body);
+                            useCloudStore().setStats(stats);
+                        } catch (e) { console.error('WS Cloud parse error', e) }
                     }
                 });
             };

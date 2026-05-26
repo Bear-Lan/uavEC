@@ -227,9 +227,21 @@ public class UAVSimulationService {
                 return;
             }
 
-            // 状态栅栏检查
+            // 状态栅栏检查：如果状态是 STOLEN，说明任务被窃取了，当前 worker 应该接管
+            // 如果状态不是 STOLEN 也不是 RUNNING_EDGE，说明任务已被其他流程处理，中止执行
             TaskInfo latestTask = taskRepository.findById(task.getId()).orElse(null);
-            if (latestTask == null || !"RUNNING_EDGE".equals(latestTask.getStatus())) {
+            if (latestTask != null && "STOLEN".equals(latestTask.getStatus())) {
+                // 接管被窃取的任务：更新状态和节点归属
+                log.info("任务 {} 被窃取后由节点 {} 接管执行", task.getId(), nodeId);
+                task.setStatus("RUNNING_EDGE");
+                task.setAssignedUavId(nodeId);
+                task.setStartTime(System.currentTimeMillis());
+                taskRepository.save(task);
+
+                // 为新节点分配资源（注意：原来 busyNode 的资源释放在工作窃取时已完成）
+                nodeService.allocate(nodeId, task.getRequiredCpu(), task.getRequiredMemory());
+                redissonClient.getMap("task:active").put(task.getId(), task);
+            } else if (latestTask == null || !"RUNNING_EDGE".equals(latestTask.getStatus())) {
                 log.warn("任务 {} 在执行期间状态已变更，中止完成处理", task.getId());
                 // 状态已变更，说明可能被其他流程处理了，只需要清理本地资源
                 redissonClient.getMap("task:active").remove(task.getId());

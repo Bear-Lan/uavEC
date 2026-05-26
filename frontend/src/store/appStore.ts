@@ -2,9 +2,10 @@ import { defineStore } from 'pinia'
 import { useAuthStore } from './authStore'
 import { useNodeStore, type UAVNode } from './nodeStore'
 import { useTaskStore, type TaskInfo } from './taskStore'
+import { useCloudStore, type CloudStats } from './cloudStore'
 import { useWsStore } from './wsStore'
 
-export type { TaskInfo, UAVNode }
+export type { TaskInfo, UAVNode, CloudStats }
 
 export const useAppStore = defineStore('app', {
     state: () => ({
@@ -19,6 +20,7 @@ export const useAppStore = defineStore('app', {
         user: () => useAuthStore().user,
         wsConnected: () => useWsStore().wsConnected,
         stompClient: () => useWsStore().stompClient,
+        cloudStats: () => useCloudStore().stats,
     },
     actions: {
         // Delegate to Auth
@@ -40,6 +42,9 @@ export const useAppStore = defineStore('app', {
         addCompletedTask(task: any) { useTaskStore().addCompletedTask(task) },
         addStealEvent(id: string, from: string, to: string) { useTaskStore().addStealEvent(id, from, to) },
         removeStealEvent(id: string) { useTaskStore().removeStealEvent(id) },
+
+        // Delegate to Cloud
+        setCloudStats(stats: any) { useCloudStore().setStats(stats) },
 
         // Delegate to WS
         initWebSocket() { useWsStore().initWebSocket() }

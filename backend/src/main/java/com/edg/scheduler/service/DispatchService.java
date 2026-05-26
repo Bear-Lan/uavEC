@@ -439,7 +439,7 @@ public class DispatchService {
 
                 // --- 重要: 状态栅栏 (Status Gate) ---
                 // 在完成模拟睡眠后，核对数据库中该任务的状态。
-                // 如果任务已被迁移 (MIGRATED) 或 因节点坠毁而重排 (QUEUED)，则此"幽灵进程"必须终止，不得篡改状态。
+                // 如果任务已被迁移 (MIGRATED)、被窃取 (STOLEN) 或 因节点坠毁而重排 (QUEUED)，则此"幽灵进程"必须终止，不得篡改状态。
                 TaskInfo latestTaskCheck = taskRepository.findById(task.getId()).orElse(null);
                 if (latestTaskCheck == null || !"RUNNING_EDGE".equals(latestTaskCheck.getStatus())) {
                     log.warn("任务 {} 模拟中止. 数据库状态='{}'，当前线程已过时",

@@ -52,6 +52,9 @@ public class TaskService {
     @Autowired
     private DispatchService dispatchService;
 
+    @Autowired
+    private UAVSimulationService uavSimulationService;
+
     /**
      * 提交任务到调度队列
      *
@@ -350,46 +353,30 @@ public class TaskService {
                                     .findByAssignedUavId(busyNode.getId());
                             for (TaskInfo task : strandedTasks) {
                                 if ("RUNNING_EDGE".equals(task.getStatus())) {
-                                    // 窃取判定通过! 转交控制权
-                                    task.setAssignedUavId(idleNode.getId());
+                                    // 窃取策略：先将任务标记为 STOLEN 状态（阻止原 worker 完成）
+                                    // 再将任务放入 UAVSimulationService 的 idleNode 队列
+                                    // 最后更新数据库中的 assignedUavId
+                                    task.setStatus("STOLEN");
+                                    taskRepository.save(task);
 
-                                    // 进行交接前的兜底检查，二次确认其可承担容量
-                                    if (idleNode.getAvailableCpu() >= task.getRequiredCpu()
-                                            && idleNode.getAvailableMemory() >= task.getRequiredMemory()) {
-                                        taskRepository.save(task);
+                                    log.info("工作窃取: 闲置节点 {} 从负载节点 {} 窃取任务 {}",
+                                            idleNode.getId(), busyNode.getId(), task.getId());
 
-                                        // 全局红黑树参数矫正
-                                        nodeService.release(busyNode.getId(), task.getRequiredCpu(),
-                                                task.getRequiredMemory());
-                                        nodeService.allocate(idleNode.getId(), task.getRequiredCpu(),
-                                                task.getRequiredMemory());
+                                    // 将任务投递到 idleNode 的 UAV 队列执行
+                                    uavSimulationService.enqueueTask(idleNode.getId(), task);
 
-                                        // 更新活跃映射以反映新的节点分配
-                                        redissonClient.getMap("task:active").put(task.getId(), task);
+                                    // 通知 UI 面板并闪烁强心剂警告
+                                    dispatchService.broadcastState();
 
-                                        log.info("工作窃取: 闲置节点 {} 从负载节点 {} 窃取任务 {}",
-                                                idleNode.getId(), busyNode.getId(), task.getId());
-
-                                        // 追平修补底层信道链路流转细节 (Trace Log)
-                                        TaskTraceLog traceLog = traceLogRepository.findByTaskId(task.getId());
-                                        if (traceLog != null) {
-                                            traceLog.setAssignedUavId(idleNode.getId());
-                                            traceLogRepository.save(traceLog);
-                                        }
-
-                                        // 通知 UI 面板并闪烁强心剂警告
-                                        dispatchService.broadcastState();
-
-                                        java.util.Map<String, Object> notification = new java.util.HashMap<>();
-                                        notification.put("type", "WORK_STEALING");
-                                        notification.put("message", "工作窃取算法触发: 闲置节点 " + idleNode.getId() + " 分担了 "
-                                                + busyNode.getId() + " 的拥挤任务！");
-                                        notification.put("fromNodeId", busyNode.getId());
-                                        notification.put("toNodeId", idleNode.getId());
-                                        notification.put("taskId", task.getId());
-                                        messagingTemplate.convertAndSend("/topic/notifications", notification);
-                                        return; // 为了防止雪崩级系统抖动，每个心跳节拍区间内仅准许发生一笔全局工作窃取流转
-                                    }
+                                    java.util.Map<String, Object> notification = new java.util.HashMap<>();
+                                    notification.put("type", "WORK_STEALING");
+                                    notification.put("message", "工作窃取算法触发: 闲置节点 " + idleNode.getId() + " 分担了 "
+                                            + busyNode.getId() + " 的拥挤任务！");
+                                    notification.put("fromNodeId", busyNode.getId());
+                                    notification.put("toNodeId", idleNode.getId());
+                                    notification.put("taskId", task.getId());
+                                    messagingTemplate.convertAndSend("/topic/notifications", notification);
+                                    return; // 为了防止雪崩级系统抖动，每个心跳节拍区间内仅准许发生一笔全局工作窃取流转
                                 }
                             }
                         } catch (Exception e) {
