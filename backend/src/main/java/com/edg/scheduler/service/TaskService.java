@@ -98,15 +98,19 @@ public class TaskService {
         traceLog.setCreatedTime(System.currentTimeMillis());
         traceLogRepository.save(traceLog);
 
-        // 支持优先级的 Redisson 队列: 具备高优先级 (>=4) 的特权任务直接“插队”到队首 (HEAD)
+        // 支持优先级的 Redisson 队列: 具备高优先级 (>=4) 的特权任务直接”插队”到队首 (HEAD)
         org.redisson.api.RDeque<TaskInfo> queue = redissonClient.getDeque(TASK_QUEUE_KEY);
         if (task.getPriority() >= 4) {
             queue.addFirst(task);
-            log.info("任务 {} (优先级={}) 以高优先级插入队列头部", task.getTaskName(), task.getPriority());
+            log.info(“任务 {} (优先级={}) 以高优先级插入队列头部”, task.getTaskName(), task.getPriority());
         } else {
             queue.addLast(task);
-            log.info("任务 {} (优先级={}) 加入队列尾部", task.getTaskName(), task.getPriority());
+            log.info(“任务 {} (优先级={}) 加入队列尾部”, task.getTaskName(), task.getPriority());
         }
+
+        // 广播任务状态到 WebSocket，让前端立即看到队列中的任务
+        messagingTemplate.convertAndSend(“/topic/tasks”, task);
+
         return task.getId();
     }
 
