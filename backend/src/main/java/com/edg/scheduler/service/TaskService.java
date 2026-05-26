@@ -495,7 +495,9 @@ public class TaskService {
 
     /**
      * 重置所有任务到初始状态（用于快照回滚后）
-     * 不将任务重新入队，仅重置状态和节点分配，防止遗留数据污染下一轮算法对比
+     * 仅重置活跃任务（RUNNING/QUEUED/DISPPATCHING）的状态和节点分配
+     * COMPLETED/FAILED 任务的 assigned_uav_id 作为历史记录保留不清
+     * 防止遗留数据污染下一轮算法对比
      */
     @Transactional
     public void resetAllTasksForSnapshot() {
@@ -505,15 +507,13 @@ public class TaskService {
             if (task.getStatus() != null &&
                 (task.getStatus().startsWith("RUNNING") ||
                  task.getStatus().equals("QUEUED") ||
-                 task.getStatus().equals("DISPATCHING") ||
-                 task.getStatus().startsWith("COMPLETED") ||
-                 task.getStatus().equals("FAILED"))) {
+                 task.getStatus().equals("DISPATCHING"))) {
                 task.setStatus("PENDING");
                 task.setAssignedUavId(null);
                 taskRepository.save(task);
                 reset++;
             }
         }
-        log.info("快照回滚：重置 {} 个任务状态为 PENDING", reset);
+        log.info("快照回滚：重置 {} 个活跃任务状态为 PENDING，已完成任务保留历史节点分配", reset);
     }
 }
