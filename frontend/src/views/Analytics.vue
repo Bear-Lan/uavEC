@@ -431,7 +431,6 @@ const loadMetricsHistory = async () => {
 
 // 格式化批次显示标签：用户-年月日时分秒-算法
 const formatBatchLabel = (batchId: string, item?: any): string => {
-    // batchId 格式: BATCH-timestamp-alg 或 admin-BATCH-timestamp-alg
     const algMap: Record<string, string> = {
         'greedy': '贪婪',
         'wfq': 'WFQ',
@@ -440,44 +439,49 @@ const formatBatchLabel = (batchId: string, item?: any): string => {
         'latency': '延迟最优',
         'energy': '能耗最优',
         'adaptive': '自适应',
-        'dqn': 'DQN'
+        'dqn': 'DQN',
+        'abc': '全算法'
     }
-    // 尝试提取算法名
-    const algPart = batchId.split('-').pop() || ''
-    const algLabel = algMap[algPart.toLowerCase()] || algPart
 
-    // 尝试提取时间戳：找 BATCH- 后面的数字部分
-    const batchMatch = batchId.match(/BATCH[_-]?(\d+)/i)
+    // 解析 batchId：按 '-' 分隔
+    // 格式: BATCH-timestamp-alg 或 user-BATCH-timestamp-alg
+    const parts = batchId.split('-')
+    let algLabel = ''
     let timeStr = ''
+
+    // 从 parts 中找算法名：最后一段如果在 algMap 中则认为是算法名
+    const lastPart = parts[parts.length - 1]
+    if (lastPart && algMap[lastPart.toLowerCase()]) {
+        algLabel = algMap[lastPart.toLowerCase()]!
+    }
+
+    // 尝试提取时间戳：batchId 中间那段数字
+    const batchMatch = batchId.match(/BATCH[_-]?(\d+)/i)
     if (batchMatch && batchMatch[1]) {
         const ts = parseInt(batchMatch[1])
         if (!isNaN(ts) && ts > 1000000000000) {
-            // 毫秒级时间戳
             const d = new Date(ts)
             const pad = (n: number) => String(n).padStart(2, '0')
             timeStr = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
         } else if (!isNaN(ts) && ts > 1000000000) {
-            // 秒级时间戳
             const d = new Date(ts * 1000)
             const pad = (n: number) => String(n).padStart(2, '0')
             timeStr = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
         }
     }
 
-    // 尝试提取用户名（batchId 前缀，如 admin-BATCH-xxx）
-    const userPart = batchId.split('-')[0] || ''
+    // 提取用户名（第一段，排除 BATCH/batch 等关键字）
+    const userPart = parts[0] || ''
+    const displayUser = (userPart && !['batch', 'admin', 'user', ''].includes(userPart.toLowerCase()) && userPart.length < 20)
+        ? userPart : ''
 
     // 组装标签
-    const parts: string[] = []
-    if (userPart && userPart.toLowerCase() !== 'batch' && userPart.length < 20) {
-        parts.push(userPart)
-    }
-    if (timeStr) {
-        parts.push(timeStr)
-    }
-    parts.push(algLabel)
+    const labelParts: string[] = []
+    if (displayUser) labelParts.push(displayUser)
+    if (timeStr) labelParts.push(timeStr)
+    if (algLabel) labelParts.push(algLabel)
 
-    return parts.join(' - ') + (item ? ` (${item.taskCount || '?'}任务)` : '')
+    return labelParts.join(' - ') + (item ? ` (${item.taskCount || '?'}任务)` : '')
 }
 
 const downloadCsv = async () => {
