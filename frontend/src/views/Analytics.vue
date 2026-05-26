@@ -345,7 +345,8 @@ const renderBatchCharts = () => {
 
     // 节点完成时序（每个节点的任务完成时间线）
     if (timelineChart && data.taskList) {
-        const completedTasks = data.taskList.filter((t: any) => t.status === 'COMPLETED' && t.endTime > 0 && t.submitTime > 0)
+        const completedTasks = data.taskList.filter((t: any) =>
+            (t.status === 'COMPLETED' || t.status?.startsWith('COMPLETED')) && t.endTime > 0 && t.submitTime > 0)
         if (completedTasks.length > 0) {
             const baseTime = Math.min(...completedTasks.map((t: any) => t.submitTime))
             const timelineData = completedTasks.map((t: any) => ({
@@ -363,6 +364,15 @@ const renderBatchCharts = () => {
                 xAxis: { type: 'value', name: '相对时间 (ms)', nameTextStyle: { fontSize: 10, color: '#8b949e' }, splitLine: { lineStyle: { color: '#21262d' } }, axisLabel: { fontSize: 9, color: '#8b949e' } },
                 yAxis: { type: 'category', data: [...new Set(completedTasks.map((t: any) => t.nodeId || 'UNASSIGNED'))], axisLabel: { fontSize: 9, color: '#8b949e' } },
                 series: [{ type: 'scatter', symbolSize: 12, data: timelineData }]
+            })
+        } else {
+            timelineChart.setOption({
+                backgroundColor: 'transparent',
+                title: { text: '暂无完成任务数据', left: 'center', top: 'center', textStyle: { color: '#8b949e', fontSize: 12, fontWeight: 'normal' } },
+                grid: { top: 10, bottom: 30, left: 80, right: 15 },
+                xAxis: { type: 'value', show: false },
+                yAxis: { type: 'category', show: false },
+                series: []
             })
         }
     }
@@ -395,9 +405,11 @@ const loadMetricsHistory = async () => {
             resp.data.forEach((item: any) => {
                 const batchId = item.batchId
                 if (batchId && !batchMap.has(batchId)) {
+                    // 解析 batchId: 格式 BATCH-timestamp-alg 或 admin-BATCH-timestamp-alg
+                    const label = formatBatchLabel(batchId, item)
                     batchMap.set(batchId, {
                         id: batchId,
-                        label: `${batchId} (${item.taskCount || '?'}任务)`
+                        label: label
                     })
                 }
             })
@@ -415,6 +427,57 @@ const loadMetricsHistory = async () => {
     } catch (e) {
         console.error('Failed to load metrics history', e)
     }
+}
+
+// 格式化批次显示标签：用户-年月日时分秒-算法
+const formatBatchLabel = (batchId: string, item?: any): string => {
+    // batchId 格式: BATCH-timestamp-alg 或 admin-BATCH-timestamp-alg
+    const algMap: Record<string, string> = {
+        'greedy': '贪婪',
+        'wfq': 'WFQ',
+        'geo': '地理',
+        'custom': '自定义',
+        'latency': '延迟最优',
+        'energy': '能耗最优',
+        'adaptive': '自适应',
+        'dqn': 'DQN'
+    }
+    // 尝试提取算法名
+    const algPart = batchId.split('-').pop() || ''
+    const algLabel = algMap[algPart.toLowerCase()] || algPart
+
+    // 尝试提取时间戳：找 BATCH- 后面的数字部分
+    const batchMatch = batchId.match(/BATCH[_-]?(\d+)/i)
+    let timeStr = ''
+    if (batchMatch && batchMatch[1]) {
+        const ts = parseInt(batchMatch[1])
+        if (!isNaN(ts) && ts > 1000000000000) {
+            // 毫秒级时间戳
+            const d = new Date(ts)
+            const pad = (n: number) => String(n).padStart(2, '0')
+            timeStr = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+        } else if (!isNaN(ts) && ts > 1000000000) {
+            // 秒级时间戳
+            const d = new Date(ts * 1000)
+            const pad = (n: number) => String(n).padStart(2, '0')
+            timeStr = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+        }
+    }
+
+    // 尝试提取用户名（batchId 前缀，如 admin-BATCH-xxx）
+    const userPart = batchId.split('-')[0] || ''
+
+    // 组装标签
+    const parts: string[] = []
+    if (userPart && userPart.toLowerCase() !== 'batch' && userPart.length < 20) {
+        parts.push(userPart)
+    }
+    if (timeStr) {
+        parts.push(timeStr)
+    }
+    parts.push(algLabel)
+
+    return parts.join(' - ') + (item ? ` (${item.taskCount || '?'}任务)` : '')
 }
 
 const downloadCsv = async () => {
