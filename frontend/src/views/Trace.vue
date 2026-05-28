@@ -272,8 +272,8 @@ const getPercentage = (val: number) => {
 .waterfall-container {
     margin-top: 25px;
     padding: 15px;
-    background: #06080a;
-    border: 1px solid #21262d;
+    background: #f5f5f5;
+    border: 1px solid #e0e0e0;
     border-radius: 6px;
 }
 .w-label {
@@ -285,7 +285,7 @@ const getPercentage = (val: number) => {
 }
 .w-bar-bg {
     height: 12px;
-    background: #161b22;
+    background: #e8e8e8;
     border-radius: 6px;
     display: flex;
     overflow: hidden;
@@ -316,26 +316,26 @@ const getPercentage = (val: number) => {
 
 /* 赛博朋克深色表格主题样式注入 */
 :deep(.el-table) {
-  --el-table-border-color: #30363d;
-  --el-table-header-bg-color: #0d1117;
-  --el-table-bg-color: transparent;
-  --el-table-tr-bg-color: transparent;
-  --el-table-row-hover-bg-color: rgba(0, 255, 204, 0.05);
-  color: #c9d1d9;
+  --el-table-border-color: #e0e0e0;
+  --el-table-header-bg-color: #f5f5f5;
+  --el-table-bg-color: #ffffff;
+  --el-table-tr-bg-color: #ffffff;
+  --el-table-row-hover-bg-color: #f9f9f9;
+  color: #222222;
 }
 :deep(.el-table th.el-table__cell) {
-  background-color: #0d1117;
+  background-color: #f5f5f5;
 }
 
 /* 侧边分析抽屉专属定制样式 */
 :deep(.cyber-drawer) {
-  background-color: #0d1117 !important;
-  border-left: 1px solid #30363d;
+  background-color: #fafafa !important;
+  border-left: 1px solid #e0e0e0;
 }
 :deep(.cyber-drawer .el-drawer__header) {
-  color: #c9d1d9;
+  color: #111111;
   font-weight: bold;
-  border-bottom: 1px solid #30363d;
+  border-bottom: 1px solid #e0e0e0;
   margin-bottom: 0;
   padding: 15px 20px;
 }
@@ -348,32 +348,28 @@ const getPercentage = (val: number) => {
   font-weight: bold;
   font-family: monospace;
   border-radius: 4px;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  background: rgba(0, 0, 0, 0.04);
 }
 .tag-success {
-  background: rgba(19, 206, 102, 0.15);
-  color: #13ce66;
-  border-color: rgba(19, 206, 102, 0.3);
-  box-shadow: 0 0 8px rgba(19, 206, 102, 0.2);
+  background: rgba(30, 132, 73, 0.12);
+  color: #1e8449;
+  border-color: rgba(30, 132, 73, 0.3);
 }
 .tag-warning {
-  background: rgba(230, 162, 60, 0.15);
-  color: #e6a23c;
-  border-color: rgba(230, 162, 60, 0.3);
-  box-shadow: 0 0 8px rgba(230, 162, 60, 0.2);
+  background: rgba(214, 137, 16, 0.12);
+  color: #d68910;
+  border-color: rgba(214, 137, 16, 0.3);
 }
 .tag-danger {
-  background: rgba(255, 73, 73, 0.15);
-  color: #ff4949;
-  border-color: rgba(255, 73, 73, 0.3);
-  box-shadow: 0 0 8px rgba(255, 73, 73, 0.2);
+  background: rgba(192, 57, 43, 0.12);
+  color: #c0392b;
+  border-color: rgba(192, 57, 43, 0.3);
 }
 .tag-info {
-  background: rgba(144, 147, 153, 0.15);
-  color: #909399;
-  border-color: rgba(144, 147, 153, 0.3);
+  background: rgba(100, 100, 100, 0.1);
+  color: #555555;
+  border-color: rgba(100, 100, 100, 0.25);
 }
 
 /* Micro Progress Bar */

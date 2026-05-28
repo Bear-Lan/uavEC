@@ -35,7 +35,7 @@
         <div v-if="batchDetailData && batchDetailData.status === 'PROCESSING'" class="kpi-card" style="border-color: #58a6ff; flex: 2; min-width: 200px;">
           <div class="kpi-content" style="width: 100%;">
             <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-              <span style="color: #8b949e; font-size: 11px;">完成进度</span>
+              <span style="color: #555555; font-size: 11px;">完成进度</span>
               <span style="color: #58a6ff; font-size: 11px;">{{ batchDetailData.completedTasks }}/{{ batchDetailData.totalTasks }}</span>
             </div>
             <el-progress :percentage="batchDetailData.totalTasks > 0 ? Math.round(batchDetailData.completedTasks / batchDetailData.totalTasks * 100) : 0" :stroke-width="6" :color="progressColor" style="margin-top: 4px;" />
@@ -43,7 +43,7 @@
         </div>
       </div>
 
-      <div v-if="!selectedBatchId" style="text-align: center; padding: 30px; color: #8b949e;">
+      <div v-if="!selectedBatchId" style="text-align: center; padding: 30px; color: #555555;">
         请从上方选择批次以查看效能分析
       </div>
     </el-card>
@@ -54,7 +54,7 @@
       <el-row :gutter="15" style="margin-bottom: 15px;">
         <!-- 任务延迟散点图 -->
         <el-col :span="14">
-          <el-card class="panel-dark" style="background: #06080a; border: 1px solid #21262d;">
+          <el-card class="panel-dark" style="background: #f5f5f5; border: 1px solid #e0e0e0;">
             <template #header>
               <div style="font-size: 12px; color: #c9d1d9; font-weight: 600;">任务延迟分布（优先级 vs 延迟）</div>
             </template>
@@ -63,7 +63,7 @@
         </el-col>
         <!-- 任务列表摘要 -->
         <el-col :span="10">
-          <el-card class="panel-dark" style="background: #06080a; border: 1px solid #21262d;">
+          <el-card class="panel-dark" style="background: #f5f5f5; border: 1px solid #e0e0e0;">
             <template #header>
               <div style="font-size: 12px; color: #c9d1d9; font-weight: 600;">
                 任务列表 ({{ taskListPreview.length }}/{{ batchDetailData.totalTasks }})
@@ -75,9 +75,9 @@
                   {{ task.status === 'COMPLETED' ? '✅' : task.status === 'FAILED' ? '❌' : '⏳' }}
                 </span>
                 <span style="color: #c9d1d9; font-size: 11px; margin-left: 6px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ task.name }}</span>
-                <span style="color: #8b949e; font-size: 10px; margin-left: 6px;">{{ task.latency || 0 }}ms</span>
+                <span style="color: #555555; font-size: 10px; margin-left: 6px;">{{ task.latency || 0 }}ms</span>
               </div>
-              <div v-if="!taskListPreview.length" style="color: #8b949e; text-align: center; padding: 20px; font-size: 12px;">
+              <div v-if="!taskListPreview.length" style="color: #555555; text-align: center; padding: 20px; font-size: 12px;">
                 暂无任务数据
               </div>
             </div>
@@ -88,21 +88,21 @@
       <el-row :gutter="15" style="margin-bottom: 15px;">
         <!-- 节点任务分布 -->
         <el-col :span="8">
-          <el-card class="panel-dark" style="background: #06080a; border: 1px solid #21262d;">
+          <el-card class="panel-dark" style="background: #f5f5f5; border: 1px solid #e0e0e0;">
             <template #header><div style="font-size: 12px; color: #c9d1d9; font-weight: 600;">节点任务分布</div></template>
             <div ref="nodeDistChartRef" style="height: 200px; width: 100%;"></div>
           </el-card>
         </el-col>
         <!-- 任务类型分布 -->
         <el-col :span="8">
-          <el-card class="panel-dark" style="background: #06080a; border: 1px solid #21262d;">
+          <el-card class="panel-dark" style="background: #f5f5f5; border: 1px solid #e0e0e0;">
             <template #header><div style="font-size: 12px; color: #c9d1d9; font-weight: 600;">任务类型分布</div></template>
             <div ref="typeDistChartRef" style="height: 200px; width: 100%;"></div>
           </el-card>
         </el-col>
         <!-- 延迟分位数 -->
         <el-col :span="8">
-          <el-card class="panel-dark" style="background: #06080a; border: 1px solid #21262d;">
+          <el-card class="panel-dark" style="background: #f5f5f5; border: 1px solid #e0e0e0;">
             <template #header><div style="font-size: 12px; color: #c9d1d9; font-weight: 600;">延迟分位数 (ms)</div></template>
             <div ref="percentileChartRef" style="height: 200px; width: 100%;"></div>
           </el-card>
@@ -112,13 +112,13 @@
       <!-- 能耗与延迟累积分布 -->
       <el-row :gutter="15">
         <el-col :span="12">
-          <el-card class="panel-dark" style="background: #06080a; border: 1px solid #21262d;">
+          <el-card class="panel-dark" style="background: #f5f5f5; border: 1px solid #e0e0e0;">
             <template #header><div style="font-size: 12px; color: #c9d1d9; font-weight: 600;">任务能耗分布</div></template>
             <div ref="energyScatterRef" style="height: 200px; width: 100%;"></div>
           </el-card>
         </el-col>
         <el-col :span="12">
-          <el-card class="panel-dark" style="background: #06080a; border: 1px solid #21262d;">
+          <el-card class="panel-dark" style="background: #f5f5f5; border: 1px solid #e0e0e0;">
             <template #header><div style="font-size: 12px; color: #c9d1d9; font-weight: 600;">节点完成时序</div></template>
             <div ref="timelineChartRef" style="height: 200px; width: 100%;"></div>
           </el-card>
@@ -278,8 +278,8 @@ const renderBatchCharts = () => {
             backgroundColor: 'transparent',
             tooltip: { trigger: 'axis' },
             grid: { top: 8, bottom: 8, left: 5, right: 5 },
-            xAxis: { type: 'category', data: types.map(t => t[0]), axisLabel: { fontSize: 9, color: '#8b949e' } },
-            yAxis: { type: 'value', splitLine: { show: false }, axisLabel: { fontSize: 9, color: '#8b949e' } },
+            xAxis: { type: 'category', data: types.map(t => t[0]), axisLabel: { fontSize: 9, color: '#555555' } },
+            yAxis: { type: 'value', splitLine: { show: false }, axisLabel: { fontSize: 9, color: '#555555' } },
             series: [{ type: 'bar', data: types.map(t => t[1]), itemStyle: { color: '#3b82f6' } }]
         })
     }
@@ -291,8 +291,8 @@ const renderBatchCharts = () => {
             backgroundColor: 'transparent',
             tooltip: { trigger: 'axis' },
             grid: { top: 8, bottom: 8, left: 5, right: 5 },
-            xAxis: { type: 'category', data: ['p50', 'p90', 'p99'], axisLabel: { fontSize: 10, color: '#8b949e' } },
-            yAxis: { type: 'value', splitLine: { lineStyle: { color: '#21262d' } }, axisLabel: { fontSize: 9, color: '#8b949e' } },
+            xAxis: { type: 'category', data: ['p50', 'p90', 'p99'], axisLabel: { fontSize: 10, color: '#555555' } },
+            yAxis: { type: 'value', splitLine: { lineStyle: { color: '#e0e0e0' } }, axisLabel: { fontSize: 9, color: '#555555' } },
             series: [{
                 type: 'bar',
                 data: [p.p50 || 0, p.p90 || 0, p.p99 || 0],
@@ -316,8 +316,8 @@ const renderBatchCharts = () => {
                 formatter: (params: any) => `${params.data.name}<br/>优先级: ${params.data.value[0]}<br/>延迟: ${params.data.value[1]} ms`
             },
             grid: { top: 10, bottom: 30, left: 50, right: 15 },
-            xAxis: { type: 'value', name: '优先级', nameTextStyle: { fontSize: 10, color: '#8b949e' }, splitLine: { lineStyle: { color: '#21262d' } }, axisLabel: { fontSize: 9, color: '#8b949e' } },
-            yAxis: { type: 'value', name: '延迟 (ms)', nameTextStyle: { fontSize: 10, color: '#8b949e' }, splitLine: { lineStyle: { color: '#21262d' } }, axisLabel: { fontSize: 9, color: '#8b949e' } },
+            xAxis: { type: 'value', name: '优先级', nameTextStyle: { fontSize: 10, color: '#555555' }, splitLine: { lineStyle: { color: '#e0e0e0' } }, axisLabel: { fontSize: 9, color: '#555555' } },
+            yAxis: { type: 'value', name: '延迟 (ms)', nameTextStyle: { fontSize: 10, color: '#555555' }, splitLine: { lineStyle: { color: '#e0e0e0' } }, axisLabel: { fontSize: 9, color: '#555555' } },
             series: [{ type: 'scatter', symbolSize: 8, data: scatterData }]
         })
     }
@@ -337,8 +337,8 @@ const renderBatchCharts = () => {
                 formatter: (params: any) => `${params.data.name}<br/>数据: ${params.data.value[0]} MB<br/>能耗: ${params.data.value[1]} J`
             },
             grid: { top: 10, bottom: 30, left: 50, right: 15 },
-            xAxis: { type: 'value', name: '数据大小 (MB)', nameTextStyle: { fontSize: 10, color: '#8b949e' }, splitLine: { lineStyle: { color: '#21262d' } }, axisLabel: { fontSize: 9, color: '#8b949e' } },
-            yAxis: { type: 'value', name: '能耗 (J)', nameTextStyle: { fontSize: 10, color: '#8b949e' }, splitLine: { lineStyle: { color: '#21262d' } }, axisLabel: { fontSize: 9, color: '#8b949e' } },
+            xAxis: { type: 'value', name: '数据大小 (MB)', nameTextStyle: { fontSize: 10, color: '#555555' }, splitLine: { lineStyle: { color: '#e0e0e0' } }, axisLabel: { fontSize: 9, color: '#555555' } },
+            yAxis: { type: 'value', name: '能耗 (J)', nameTextStyle: { fontSize: 10, color: '#555555' }, splitLine: { lineStyle: { color: '#e0e0e0' } }, axisLabel: { fontSize: 9, color: '#555555' } },
             series: [{ type: 'scatter', symbolSize: 8, data: scatterData }]
         })
     }
@@ -361,14 +361,14 @@ const renderBatchCharts = () => {
                     formatter: (params: any) => `${params.data.name}<br/>节点: ${params.data.value[0]}<br/>延迟: ${params.data.value[1]} ms`
                 },
                 grid: { top: 10, bottom: 30, left: 80, right: 15 },
-                xAxis: { type: 'value', name: '相对时间 (ms)', nameTextStyle: { fontSize: 10, color: '#8b949e' }, splitLine: { lineStyle: { color: '#21262d' } }, axisLabel: { fontSize: 9, color: '#8b949e' } },
-                yAxis: { type: 'category', data: [...new Set(completedTasks.map((t: any) => t.nodeId || 'UNASSIGNED'))], axisLabel: { fontSize: 9, color: '#8b949e' } },
+                xAxis: { type: 'value', name: '相对时间 (ms)', nameTextStyle: { fontSize: 10, color: '#555555' }, splitLine: { lineStyle: { color: '#e0e0e0' } }, axisLabel: { fontSize: 9, color: '#555555' } },
+                yAxis: { type: 'category', data: [...new Set(completedTasks.map((t: any) => t.nodeId || 'UNASSIGNED'))], axisLabel: { fontSize: 9, color: '#555555' } },
                 series: [{ type: 'scatter', symbolSize: 12, data: timelineData }]
             })
         } else {
             timelineChart.setOption({
                 backgroundColor: 'transparent',
-                title: { text: '暂无完成任务数据', left: 'center', top: 'center', textStyle: { color: '#8b949e', fontSize: 12, fontWeight: 'normal' } },
+                title: { text: '暂无完成任务数据', left: 'center', top: 'center', textStyle: { color: '#555555', fontSize: 12, fontWeight: 'normal' } },
                 grid: { top: 10, bottom: 30, left: 80, right: 15 },
                 xAxis: { type: 'value', show: false },
                 yAxis: { type: 'category', show: false },
@@ -536,8 +536,8 @@ onUnmounted(() => {
    padding-bottom: 20px;
 }
 .panel-dark {
-   background: #06080a;
-   border: 1px solid #21262d;
+   background: #f5f5f5;
+   border: 1px solid #e0e0e0;
    border-radius: 6px;
 }
 .panel-header {
@@ -545,7 +545,7 @@ onUnmounted(() => {
    font-size: 13px;
    font-weight: 600;
    color: #c9d1d9;
-   border-bottom: 1px solid #21262d;
+   border-bottom: 1px solid #e0e0e0;
    letter-spacing: 0.5px;
    display: flex;
    align-items: center;
@@ -584,7 +584,7 @@ onUnmounted(() => {
 }
 .kpi-label {
    font-size: 11px;
-   color: #8b949e;
+   color: #555555;
    margin-bottom: 2px;
 }
 .kpi-value {

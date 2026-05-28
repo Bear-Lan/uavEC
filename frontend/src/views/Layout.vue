@@ -24,9 +24,9 @@
           :default-active="activePath"
           class="cyber-menu"
           router
-          background-color="#0a0e14"
-          text-color="#8b949e"
-          active-text-color="#00ffcc"
+          background-color="#f5f5f5"
+          text-color="#555555"
+          active-text-color="#1a1a1a"
         >
           <el-menu-item index="/">
             <el-icon><Odometer /></el-icon>
@@ -39,6 +39,10 @@
           <el-menu-item index="/analytics">
             <el-icon><DataAnalysis /></el-icon>
             <span>多维效能基准</span>
+          </el-menu-item>
+          <el-menu-item index="/algorithm-compare">
+            <el-icon><Guide /></el-icon>
+            <span>全算法对比</span>
           </el-menu-item>
           <el-menu-item index="/trace">
             <el-icon><List /></el-icon>
@@ -99,7 +103,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAppStore } from '../store/appStore'
-import { Odometer, Platform, DataAnalysis, List, User } from '@element-plus/icons-vue'
+import { Odometer, Platform, DataAnalysis, List, User, Guide } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 
 const route = useRoute()
@@ -168,19 +172,19 @@ const handleLogout = () => {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background-color: #0d1117;
-  color: #c9d1d9;
+  background-color: #ffffff;
+  color: #222222;
 }
 
-/* SaaS Top Navigation Bar */
+/* Top Navigation Bar */
 .top-navbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 0 20px;
   height: 50px;
-  background: #06080a;
-  border-bottom: 1px solid #30363d;
+  background: #f8f8f8;
+  border-bottom: 1px solid #dddddd;
   flex-shrink: 0;
 }
 
@@ -193,13 +197,13 @@ const handleLogout = () => {
 .navbar-logo {
   font-size: 16px;
   font-weight: 800;
-  color: #00ffcc;
+  color: #1a1a1a;
   letter-spacing: 2px;
 }
 
 .navbar-subtitle {
   font-size: 11px;
-  color: #8b949e;
+  color: #666666;
   letter-spacing: 1px;
 }
 
@@ -212,7 +216,7 @@ const handleLogout = () => {
 .sys-time {
   font-family: var(--font-mono);
   font-size: 13px;
-  color: #c9d1d9;
+  color: #333333;
   letter-spacing: 1px;
   margin-right: 10px;
 }
@@ -221,12 +225,12 @@ const handleLogout = () => {
   display: flex;
   align-items: center;
   gap: 6px;
-  background: rgba(0, 255, 204, 0.08);
-  border: 1px solid rgba(0, 255, 204, 0.2);
+  background: rgba(0, 0, 0, 0.05);
+  border: 1px solid #cccccc;
   padding: 4px 12px;
   border-radius: 20px;
   font-size: 12px;
-  color: #c9d1d9;
+  color: #333333;
   font-weight: 500;
 }
 
@@ -234,9 +238,7 @@ const handleLogout = () => {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #13ce66;
-  box-shadow: 0 0 6px #13ce66;
-  animation: dotPulse 2s infinite;
+  background: #27ae60;
 }
 
 @keyframes dotPulse {
@@ -252,8 +254,8 @@ const handleLogout = () => {
 
 .sidebar {
   width: 220px;
-  background: #0a0e14;
-  border-right: 1px solid #30363d;
+  background: #f5f5f5;
+  border-right: 1px solid #dddddd;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -267,13 +269,14 @@ const handleLogout = () => {
    font-weight: 500;
 }
 .cyber-menu .el-menu-item.is-active {
-    background: rgba(0, 255, 204, 0.1) !important;
-    border-right: 3px solid #00ffcc;
+    background: rgba(0, 0, 0, 0.08) !important;
+    color: #1a1a1a;
+    border-right: 3px solid #333333;
 }
 
 .ws-status-panel {
   padding: 15px;
-  border-top: 1px solid #30363d;
+  border-top: 1px solid #dddddd;
 }
 
 .ws-status-indicator {
@@ -282,25 +285,23 @@ const handleLogout = () => {
   gap: 8px;
   font-family: var(--font-mono);
   font-size: 11px;
-  color: #ff4949;
+  color: #666666;
   letter-spacing: 1px;
 }
 
 .ws-status-indicator.is-connected {
-  color: #00ffcc;
+  color: #27ae60;
 }
 
 .ws-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #ff4949;
-  box-shadow: 0 0 5px #ff4949;
+  background: #cccccc;
 }
 
 .ws-status-indicator.is-connected .ws-dot {
-  background: #00ffcc;
-  box-shadow: 0 0 5px #00ffcc;
+  background: #27ae60;
 }
 
 .content-area {
@@ -308,6 +309,23 @@ const handleLogout = () => {
   padding: 16px;
   overflow-y: auto;
   overflow-x: hidden;
+  background: #ffffff;
+}
+
+@media print {
+  .sidebar, .ws-status-panel, .top-navbar {
+    background: #f5f5f5 !important;
+    border-color: #dddddd !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .app-layout {
+    background: #ffffff !important;
+    color: #111111 !important;
+  }
+  .navbar-logo { color: #111111 !important; }
+  .navbar-subtitle, .sys-time { color: #555555 !important; }
+  .content-area { background: #ffffff !important; }
 }
 
 /* Page Transition */

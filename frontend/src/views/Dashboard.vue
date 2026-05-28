@@ -169,9 +169,9 @@
               </linearGradient>
 
               <radialGradient id="radar-glow" cx="50%" cy="50%" r="50%">
-                <stop offset="0%" stop-color="rgba(0, 255, 204, 0.15)"/>
-                <stop offset="80%" stop-color="rgba(0, 255, 204, 0.05)"/>
-                <stop offset="100%" stop-color="rgba(0, 255, 204, 0)"/>
+                <stop offset="0%" stop-color="rgba(74, 144, 217, 0.2)"/>
+                <stop offset="80%" stop-color="rgba(74, 144, 217, 0.08)"/>
+                <stop offset="100%" stop-color="rgba(74, 144, 217, 0)"/>
               </radialGradient>
               <filter id="glow">
                 <feGaussianBlur stdDeviation="1.5" result="coloredBlur"/>
@@ -785,8 +785,9 @@ onMounted(async () => {
 
 .radar-card {
   height: 100%;
-  border-color: #00ffcc33;
+  border-color: #dddddd;
   overflow: hidden;
+  background: #ffffff;
 }
 
 .radar-header {
@@ -816,17 +817,17 @@ onMounted(async () => {
   pointer-events: none;
 }
 .kpi-block {
-  background: rgba(13, 17, 23, 0.6);
+  background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(8px);
-  border: 1px solid rgba(48, 54, 61, 0.6);
+  border: 1px solid rgba(200, 200, 200, 0.8);
   border-radius: 6px;
   padding: 8px 12px;
   min-width: 140px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 .kpi-label {
   font-size: 10px;
-  color: #8b949e;
+  color: #666666;
   font-family: var(--font-mono);
   letter-spacing: 0.5px;
   margin-bottom: 2px;
@@ -836,17 +837,18 @@ onMounted(async () => {
   font-weight: 700;
   font-family: var(--font-mono);
   line-height: 1;
+  color: #111111;
 }
 .kpi-sub {
   font-size: 12px;
-  color: #8b949e;
+  color: #888888;
   margin-left: 2px;
   font-weight: 400;
 }
-.highlight-accent { color: #00ffcc; text-shadow: 0 0 8px rgba(0, 255, 204, 0.3); }
-.highlight-success { color: #13ce66; text-shadow: 0 0 8px rgba(19, 206, 102, 0.3); }
-.highlight-warning { color: #e6a23c; text-shadow: 0 0 8px rgba(230, 162, 60, 0.3); }
-.highlight-danger { color: #ff4949; text-shadow: 0 0 8px rgba(255, 73, 73, 0.3); }
+.highlight-accent { color: #2874a6; }
+.highlight-success { color: #1e8449; }
+.highlight-warning { color: #d68910; }
+.highlight-danger { color: #c0392b; }
 
 .legend-item {
   font-size: 13px;
@@ -861,14 +863,14 @@ onMounted(async () => {
   height: 8px;
   border-radius: 2px;
 }
-.uav-color { background: #00ffcc; box-shadow: 0 0 5px #00ffcc; }
-.cloud-color { background: #3b82f6; box-shadow: 0 0 5px #3b82f6; }
-.user-color { background: #e6a23c; box-shadow: 0 0 5px #e6a23c; }
-.online-user-legend { background: #a855f7; box-shadow: 0 0 5px #a855f7; }
+.uav-color { background: #4a90d9; box-shadow: 0 0 5px rgba(74, 144, 217, 0.5); }
+.cloud-color { background: #3b82f6; box-shadow: 0 0 5px rgba(59, 130, 246, 0.5); }
+.user-color { background: #d68910; box-shadow: 0 0 5px rgba(214, 137, 16, 0.5); }
+.online-user-legend { background: #9b59b6; box-shadow: 0 0 5px rgba(155, 89, 182, 0.5); }
 
 .custom-weights-box {
-  background: rgba(0, 255, 204, 0.03);
-  border-left: 2px solid #00ffcc;
+  background: rgba(74, 144, 217, 0.05);
+  border-left: 2px solid #4a90d9;
   padding: 10px 15px 5px 15px;
   margin-bottom: 18px;
   border-radius: 0 4px 4px 0;
@@ -883,7 +885,7 @@ onMounted(async () => {
 
 /* ================= 雷达图 SVG 深度定制层 ================= */
 .radar-svg {
-  background: radial-gradient(circle at center, rgba(13, 17, 23, 0.8) 0%, rgba(6, 8, 10, 1) 100%);
+  background: radial-gradient(circle at center, rgba(240, 240, 240, 0.9) 0%, rgba(220, 220, 220, 1) 100%);
   border-radius: 4px;
   cursor: grab;
 }
@@ -892,7 +894,7 @@ onMounted(async () => {
 }
 
 .grid-lines line {
-  stroke: rgba(48, 54, 61, 0.4);
+  stroke: rgba(180, 180, 180, 0.5);
   stroke-width: 0.2;
 }
 
@@ -916,7 +918,7 @@ onMounted(async () => {
 
 .node-label {
   font-size: 3px;
-  fill: #c9d1d9;
+  fill: #222222;
   font-family: monospace;
 }
 

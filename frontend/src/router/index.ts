@@ -54,6 +54,11 @@ const router = createRouter({
                     component: Trace
                 },
                 {
+                    path: 'algorithm-compare',
+                    name: 'AlgorithmCompare',
+                    component: () => import('../views/AlgorithmCompare.vue')
+                },
+                {
                     path: 'users',
                     name: 'UserManagement',
                     component: () => import('../views/UserManagement.vue'),

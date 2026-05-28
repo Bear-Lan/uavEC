@@ -258,12 +258,12 @@ const submitNodeUpgrade = async () => {
 }
 .cloud-card {
     border: 1px solid #3b82f6 !important;
-    background: #0d1117 !important;
+    background: #f5f5f5 !important;
 }
 
 :deep(.cyber-dialog) {
-  background-color: #0d1117 !important;
-  border: 1px solid #30363d;
+  background-color: #fafafa !important;
+  border: 1px solid #dddddd;
   border-radius: 8px;
 }
 :deep(.cyber-dialog .el-dialog__header) {

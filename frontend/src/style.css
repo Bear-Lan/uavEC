@@ -1,5 +1,5 @@
 /* ================================================================
-   EDG-AXIS Design System — Cyberpunk Dark Theme
+   EDG-AXIS Design System — Light Theme
    ================================================================ */
 
 @import url('https://fonts.loli.net/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap');
@@ -9,35 +9,35 @@
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
 
-  /* Core palette */
-  --color-bg-primary: #0d1117;
-  --color-bg-secondary: #06080a;
-  --color-bg-tertiary: #0a0e14;
-  --color-bg-card: rgba(13, 17, 23, 0.85);
+  /* Core palette — Light */
+  --color-bg-primary: #ffffff;
+  --color-bg-secondary: #f5f5f5;
+  --color-bg-tertiary: #f0f0f0;
+  --color-bg-card: rgba(255, 255, 255, 0.9);
 
-  --color-border: #30363d;
-  --color-border-muted: #21262d;
+  --color-border: #dddddd;
+  --color-border-muted: #e8e8e8;
 
-  --color-text-primary: #c9d1d9;
-  --color-text-muted: #8b949e;
+  --color-text-primary: #111111;
+  --color-text-muted: #666666;
 
-  --color-accent: #00ffcc;
-  --color-accent-dim: rgba(0, 255, 204, 0.15);
-  --color-accent-glow: rgba(0, 255, 204, 0.4);
+  --color-accent: #1a1a1a;
+  --color-accent-dim: rgba(0, 0, 0, 0.08);
+  --color-accent-glow: rgba(0, 0, 0, 0.15);
 
-  --color-danger: #ff4949;
-  --color-warning: #e6a23c;
-  --color-success: #13ce66;
-  --color-info: #3b82f6;
+  --color-danger: #c0392b;
+  --color-warning: #d68910;
+  --color-success: #1e8449;
+  --color-info: #2874a6;
 
   /* Shadows & FX */
-  --shadow-card: 0 0 20px rgba(0, 255, 204, 0.06);
-  --shadow-glow-accent: 0 0 12px var(--color-accent-glow);
+  --shadow-card: 0 2px 12px rgba(0, 0, 0, 0.08);
+  --shadow-glow-accent: 0 2px 8px var(--color-accent-glow);
 
   font-family: var(--font-sans);
   line-height: 1.5;
   font-weight: 400;
-  color-scheme: dark;
+  color-scheme: light;
   color: var(--color-text-primary);
   background-color: var(--color-bg-primary);
 
@@ -59,8 +59,8 @@ a {
   text-decoration: inherit;
 }
 a:hover {
-  color: #33ffd6;
-  text-shadow: 0 0 8px var(--color-accent-dim);
+  color: #555555;
+  text-shadow: none;
 }
 
 body {
@@ -89,8 +89,8 @@ body {
   transition: border-color 0.3s ease, box-shadow 0.3s ease;
 }
 .cyber-card:hover {
-  border-color: rgba(0, 255, 204, 0.2) !important;
-  box-shadow: 0 0 25px rgba(0, 255, 204, 0.08);
+  border-color: rgba(0, 0, 0, 0.2) !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
 }
 
 /* ======================== Cyber Header ======================== */
@@ -100,13 +100,12 @@ body {
   gap: 10px;
 }
 .cyber-title {
-  color: var(--color-accent);
+  color: #111111;
   font-weight: 700;
   font-size: 14px;
   letter-spacing: 1.5px;
   text-transform: uppercase;
   font-family: var(--font-mono);
-  text-shadow: 0 0 10px var(--color-accent-dim);
 }
 
 /* ======================== Cyber Button ======================== */
@@ -143,7 +142,7 @@ body {
 .cyber-form .el-input__wrapper,
 .cyber-form .el-select__wrapper,
 .cyber-form .el-input-number {
-  background-color: rgba(0, 0, 0, 0.3) !important;
+  background-color: rgba(255, 255, 255, 0.9) !important;
   border-color: var(--color-border) !important;
   box-shadow: none !important;
 }
@@ -161,8 +160,8 @@ body {
   transition: border-color 0.3s ease, box-shadow 0.3s ease;
 }
 .cyber-uav-card:hover {
-  border-color: var(--color-accent);
-  box-shadow: var(--shadow-glow-accent);
+  border-color: #666666;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 .cyber-uav-card.offline {
   border-color: var(--color-danger);
@@ -179,7 +178,7 @@ body {
   margin: 0;
   font-size: 14px;
   font-family: var(--font-mono);
-  color: var(--color-accent);
+  color: #111111;
 }
 
 .node-stats .stat-item {
@@ -238,22 +237,9 @@ body {
 .mt-3 { margin-top: 15px; }
 .mt-4 { margin-top: 20px; }
 
-/* ======================== Scanline FX ======================== */
+/* ======================== Scanline FX (disabled in light) ======================== */
 .radar-scan {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  pointer-events: none;
-  background: repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 2px,
-    rgba(0, 255, 204, 0.015) 2px,
-    rgba(0, 255, 204, 0.015) 4px
-  );
-  z-index: 5;
+  display: none;
 }
 
 /* ======================== Server Blink FX ======================== */
@@ -265,11 +251,107 @@ body {
   50% { opacity: 0.2; }
 }
 
-/* ======================== Element Plus Dark Theme Overrides ======================== */
+/* ======================== Element Plus Light Theme Overrides ======================== */
 .el-card {
   --el-card-bg-color: transparent;
 }
 .el-card__header {
   border-bottom: 1px solid var(--color-border) !important;
   padding: 14px 20px !important;
+}
+
+/* ======================== Print / Paper Theme ======================== */
+@media print {
+  :root {
+    --color-bg-primary: #ffffff;
+    --color-bg-secondary: #f8f8f8;
+    --color-bg-tertiary: #f0f0f0;
+    --color-bg-card: #ffffff;
+    --color-border: #cccccc;
+    --color-border-muted: #e0e0e0;
+    --color-text-primary: #111111;
+    --color-text-muted: #555555;
+    --color-accent: #1a1a1a;
+    color-scheme: light;
+    background-color: #ffffff;
+  }
+
+  body {
+    background-color: #ffffff;
+    color: #111111;
+  }
+
+  .top-navbar,
+  .sidebar,
+  .ws-status-panel {
+    background: #f5f5f5 !important;
+    border-color: #dddddd !important;
+  }
+
+  .navbar-logo,
+  .cyber-title,
+  .node-header h3 {
+    color: #111111 !important;
+    text-shadow: none !important;
+  }
+
+  .navbar-subtitle,
+  .sys-time,
+  .ws-status-indicator,
+  .node-stats .label,
+  .node-stats .detail {
+    color: #555555 !important;
+  }
+
+  .cyber-card,
+  .cyber-uav-card,
+  .panel-dark,
+  .chart-card,
+  .table-card {
+    background: #ffffff !important;
+    border: 1px solid #dddddd !important;
+    box-shadow: none !important;
+  }
+
+  .cyber-menu-item,
+  .el-menu-item {
+    color: #333333 !important;
+    background: transparent !important;
+  }
+
+  .el-table {
+    --el-table-bg-color: #ffffff;
+    --el-table-tr-bg-color: #ffffff;
+    --el-table-header-bg-color: #f5f5f5;
+    --el-table-border-color: #e0e0e0;
+    color: #111111;
+  }
+
+  .glass-tag {
+    background: rgba(0,0,0,0.05) !important;
+    color: #333333 !important;
+    border-color: #cccccc !important;
+  }
+
+  .compare-container {
+    background: #ffffff !important;
+    color: #111111 !important;
+  }
+
+  .page-title,
+  .chart-title {
+    color: #111111 !important;
+  }
+
+  .data-table th {
+    background: #f0f0f0 !important;
+    color: #111111 !important;
+  }
+
+  .data-table td {
+    color: #333333 !important;
+  }
+
+  .success-high { color: #1a7a3c !important; }
+  .success-low { color: #c0392b !important; }
 }
